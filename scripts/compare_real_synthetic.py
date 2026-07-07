@@ -73,12 +73,12 @@ def main() -> None:
         real_df = pd.DataFrame(real_feats)
 
         # synthetic: same drone parameters, comparison preset.
-        # The published ImageSet frames for the gate drones show the FHSS
-        # control link only (no persistent video band), so compare fhss-only.
         # Fitted params (configs/fitted_params.yaml) apply automatically via
         # the exporter; a real background pool is used when available (it
         # already carries ambient interference, so nothing extra is injected).
-        label = "rfuav_fhss_like"
+        # If the raw-IQ fit found a video/TDD-slot population (the dominant
+        # bright feature in DJI captures), include it - same rule as the
+        # validation gate.
         frame = syn_cfg["frame"]["presets"][syn_cfg["frame"]["preset"]]
         fitted_yaml = Path("configs/fitted_params.yaml")
         fitted = {}
@@ -86,6 +86,7 @@ def main() -> None:
             import yaml
 
             fitted = (yaml.safe_load(fitted_yaml.read_text()) or {}).get(drone, {})
+        label = "rfuav_fhss_video_like" if fitted.get("video_over_floor_db") is not None else "rfuav_fhss_like"
         bg = Path("outputs/real_samples/backgrounds") / f"{drone}.npy"
         spec = SynthSpec(
             label=label,

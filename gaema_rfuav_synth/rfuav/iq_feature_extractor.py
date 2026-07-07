@@ -133,9 +133,15 @@ def extract_iq_features(
     dur_ms = len(iq) / fs * 1e3
 
     strong = [r for r in regions if r.peak_db_over_floor >= min_peak_db]
-    bursts = [r for r in strong if r.t_width_ms < 0.4 * dur_ms]
-    videos = [r for r in strong if r.t_width_ms >= 0.4 * dur_ms]
+    # two burst populations: narrow control hops vs wide video/TDD slots
+    # (DJI video links are bursty ~10-20 MHz slots, not continuous emissions)
+    wide_split = 5.0  # MHz
+    narrow = [r for r in strong if r.f_height_mhz < wide_split and r.t_width_ms < 0.4 * dur_ms]
+    wide = [r for r in strong if r.f_height_mhz >= wide_split]
+    bursts = narrow
+    videos = wide
     hop_med, hop_std = _hop_interval(bursts)
+    vid_med, _ = _hop_interval(wide) if len(wide) >= 3 else (None, None)
 
     # RFUAV-style SNR: mean in-burst power vs noise floor (linear domain)
     snr = None
@@ -153,6 +159,10 @@ def extract_iq_features(
     b_bw = [b.f_height_mhz for b in bursts]
     b_dur = [b.t_width_ms for b in bursts]
     centers = [b.f_center_mhz for b in bursts]
+    v_dur = [v.t_width_ms for v in videos]
+    video_duty = None
+    if vid_med and v_dur:
+        video_duty = min(float(np.median(v_dur)) / vid_med, 1.0)
     return {
         "estimated_bandwidth_mhz": med(b_bw),
         "estimated_bandwidth_std_mhz": std(b_bw),
@@ -163,6 +173,12 @@ def extract_iq_features(
         "estimated_hop_span_mhz": (max(centers) - min(centers) + (med(b_bw) or 0.0)) if centers else None,
         "estimated_snr_db": snr,
         "estimated_video_bandwidth_mhz": med([v.f_height_mhz for v in videos]),
+        "estimated_video_center_mhz": med([v.f_center_mhz for v in videos]),
+        "estimated_video_slot_ms": vid_med,
+        "estimated_video_duty": video_duty,
+        # in-band (S+N)/N levels per population, for component power matching
+        "burst_over_floor_db": med([b.mean_db_over_floor for b in bursts]),
+        "video_over_floor_db": med([v.mean_db_over_floor for v in videos]),
         "noise_floor_db": floor_db,
         "n_burst_regions": len(bursts),
         "n_video_regions": len(videos),

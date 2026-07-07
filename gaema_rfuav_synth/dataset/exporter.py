@@ -132,18 +132,31 @@ def _gen_fhss(spec: SynthSpec, rng: np.random.Generator):
         duration_jitter_frac=spec.duration_jitter_frac or ov.get("duration_jitter_frac", 0.0),
         freq_jitter_mhz=spec.freq_jitter_mhz or ov.get("freq_jitter_mhz", 0.0),
     )
-    return generate_fhss(params, spec.fs, spec.duration_s, rng)
+    iq, events = generate_fhss(params, spec.fs, spec.duration_s, rng)
+    return iq, events, params
 
 
 def _gen_video(spec: SynthSpec, rng: np.random.Generator, offset_mhz: float | None = None):
     p = _profile(spec)
-    vtsbw = p.vtsbw_mhz or 10.0
+    ov = {**REAL_INFORMED_OVERRIDES.get(spec.drone or "", {}), **_fitted_params(spec.drone or "")}
+    vtsbw = ov.get("vtsbw_mhz", p.vtsbw_mhz or 10.0)
+    # fitted real center wins over any caller-suggested placement
+    fitted_center = ov.get("video_center_mhz")
+    if fitted_center is not None:
+        offset_mhz = fitted_center
     if offset_mhz is None:
         lim = (spec.fs / 1e6) * 0.5 - vtsbw
         offset_mhz = float(rng.uniform(-lim, lim)) * 0.5
-    return generate_video(
-        VideoParams(vtsbw_mhz=vtsbw, center_offset_mhz=offset_mhz), spec.fs, spec.duration_s, rng
+    params = VideoParams(
+        vtsbw_mhz=vtsbw,
+        center_offset_mhz=offset_mhz,
+        slot_period_ms=ov.get("video_slot_ms"),  # None -> continuous emission
+        duty=ov.get("video_duty", 1.0),
+        slot_jitter_ms=ov.get("video_slot_jitter_ms", 0.05),
+        spectral_ripple_db=ov.get("video_ripple_db", 0.0),
     )
+    iq, events = generate_video(params, spec.fs, spec.duration_s, rng)
+    return iq, events, params
 
 
 def generate_clean(spec: SynthSpec, rng: np.random.Generator):
@@ -152,18 +165,20 @@ def generate_clean(spec: SynthSpec, rng: np.random.Generator):
     if spec.label == "noise_only":
         return np.zeros(n, dtype=np.complex128), []
     if spec.label == "rfuav_fhss_like":
-        return _gen_fhss(spec, rng)
+        iq, ev, _ = _gen_fhss(spec, rng)
+        return iq, ev
     if spec.label == "rfuav_video_like":
-        return _gen_video(spec, rng)
+        iq, ev, _ = _gen_video(spec, rng)
+        return iq, ev
     if spec.label == "rfuav_fhss_video_like":
-        iq1, ev1 = _gen_fhss(spec, rng)
+        iq1, ev1, _ = _gen_fhss(spec, rng)
         p = _profile(spec)
-        # place the video link clear of the FHSS hop span
+        # default placement clear of the FHSS hop span (fitted center wins inside _gen_video)
         span = p.fhsbw_mhz
         vtsbw = p.vtsbw_mhz or 10.0
         side = 1.0 if rng.random() < 0.5 else -1.0
         offset = side * (span / 2 + vtsbw / 2 + float(rng.uniform(2.0, 10.0)))
-        iq2, ev2 = _gen_video(spec, rng, offset_mhz=offset)
+        iq2, ev2, _ = _gen_video(spec, rng, offset_mhz=offset)
         return iq1 + iq2, ev1 + ev2
     if spec.label == "wifi_like":
         lim = (spec.fs / 1e6) * 0.35
@@ -183,9 +198,55 @@ def generate_clean(spec: SynthSpec, rng: np.random.Generator):
     raise ValueError(f"unknown class label {spec.label!r}")
 
 
+def _synthesize_level_matched(spec: SynthSpec, rng: np.random.Generator):
+    """Real-background path with per-component power matching.
+
+    Each component (FHSS control / video slots) is scaled so its in-band
+    PSD-over-floor matches the level measured on the real capture
+    (fitted burst_over_floor_db / video_over_floor_db). A single frame-level
+    SNR cannot do this: components with different occupied bandwidths end up
+    with the wrong relative brightness.
+    """
+    from ..rfuav.background_extractor import BackgroundPool
+
+    fitted = _fitted_params(spec.drone or "")
+    n = int(round(spec.fs * spec.duration_s))
+    bg = BackgroundPool.load(spec.background_path).sample(n, rng)
+    psd_bg = measure_power(bg) / spec.fs  # per-Hz noise floor
+
+    def scale_for(over_floor_db: float, bw_hz: float, comp: np.ndarray) -> float:
+        # NOTE: over_floor targets are in RFUAV's 10*log10(|Zxx|) magnitude-dB
+        # convention (transform/stft.py), i.e. HALF the power-dB value. The
+        # true power ratio is therefore 10^(2t/10) = 10^(t/5).
+        # component ON power == 1 -> in-band PSD ~= 1/bw_hz; match (S+N)/N - 1
+        ratio = max(10.0 ** (over_floor_db / 5.0) - 1.0, 1e-3)
+        return float(np.sqrt(ratio * psd_bg * bw_hz))
+
+    iq = bg.astype(np.complex128)
+    events: list[SignalEvent] = []
+    if spec.label in ("rfuav_fhss_like", "rfuav_fhss_video_like"):
+        x, ev, params = _gen_fhss(spec, rng)
+        iq += x * scale_for(fitted["burst_over_floor_db"], params.fhsbw_mhz * 1e6, x)
+        events += ev
+    if spec.label in ("rfuav_video_like", "rfuav_fhss_video_like"):
+        x, ev, vparams = _gen_video(spec, rng)
+        t = fitted.get("video_over_floor_db", fitted["burst_over_floor_db"])
+        iq += x * scale_for(t, vparams.vtsbw_mhz * 1e6, x)
+        events += ev
+    return iq, events
+
+
 def synthesize(spec: SynthSpec) -> tuple[np.ndarray, list[SignalEvent]]:
     """Generate the final IQ frame (signal + channel + noise + impairments)."""
     rng = np.random.default_rng(spec.seed)
+
+    if (
+        spec.background_path is not None
+        and spec.label in ("rfuav_fhss_like", "rfuav_video_like", "rfuav_fhss_video_like")
+        and "burst_over_floor_db" in _fitted_params(spec.drone or "")
+    ):
+        return _synthesize_level_matched(spec, rng)
+
     iq, events = generate_clean(spec, rng)
 
     for kind in spec.inject_interference:

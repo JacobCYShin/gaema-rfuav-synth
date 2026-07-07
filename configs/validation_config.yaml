@@ -12,7 +12,7 @@ thresholds:
 analysis:
   stft_point: 256
   thresh_db: 5.0
-  n_real_frames: 5        # frames taken from the real raw IQ file
+  n_real_frames: 6        # frames total, spread across the given raw IQ files
   n_synth_frames: 3       # independently-seeded synthetic frames
   frame_duration_s: 0.1
   hist_range_db: [-10.0, 50.0]   # dB over per-frequency noise floor

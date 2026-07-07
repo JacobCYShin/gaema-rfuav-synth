@@ -3,12 +3,38 @@
 FUTABA_T14SG:
   burst_bw_mhz: 0.703
   burst_bw_measured_mhz: 1.172
-  fhsdt_ms: 0.3597
-  fhsdc_ms: 0.8755
-  hop_span_mhz: 80.27
-  timing_jitter_ms: 0.2189
+  fhsdt_ms: 0.3533
+  fhsdc_ms: 0.7525
+  hop_span_mhz: 79.49
+  timing_jitter_ms: 0.1881
   duration_jitter_frac: 0.3
   amp_jitter_db: 1.5
   freq_jitter_mhz: 0.117
-  snr_db_observed: 12.91
+  snr_db_observed: 12.53
+  burst_over_floor_db: 17.62
   fitted_from: pack1_0-1s.iq
+  video_over_floor_db: 16.85
+  vtsbw_mhz: 10.16
+  video_center_mhz: -17.29
+  video_slot_ms: 8.5325
+  video_duty: 0.142
+  video_ripple_db: 6.0
+DJI_MINI3:
+  burst_bw_mhz: 1.172
+  burst_bw_measured_mhz: 1.953
+  fhsdt_ms: 0.0922
+  fhsdc_ms: 0.4066
+  hop_span_mhz: 97.46
+  timing_jitter_ms: 0.1016
+  duration_jitter_frac: 0.3
+  amp_jitter_db: 1.5
+  freq_jitter_mhz: 0.195
+  snr_db_observed: 10.31
+  burst_over_floor_db: 13.57
+  fitted_from: pack2_0-1s.iq
+  video_over_floor_db: 25.56
+  vtsbw_mhz: 9.77
+  video_center_mhz: -2.2
+  video_slot_ms: 3.1462
+  video_duty: 0.263
+  video_ripple_db: 6.0

@@ -33,32 +33,33 @@ FEATURE_KEYS = [
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("iq_file")
+    ap.add_argument("iq_files", nargs="+", help="one or more raw IQ files (temporally distant preferred)")
     ap.add_argument("--drone", required=True)
     ap.add_argument("--fs", type=float, default=100e6)
     ap.add_argument("--duration-s", type=float, default=0.1)
-    ap.add_argument("--n-frames", type=int, default=5)
+    ap.add_argument("--n-frames", type=int, default=5, help="frames per file")
     ap.add_argument("--stft-point", type=int, default=256)
     ap.add_argument("--thresh-db", type=float, default=5.0)
     args = ap.parse_args()
 
     n = int(args.fs * args.duration_s)
     rows = []
-    for k in range(args.n_frames):
-        iq = load_raw_iq(args.iq_file, count=n, offset_samples=k * n)
-        if len(iq) < n:
-            break
-        feats = extract_iq_features(iq, args.fs, args.stft_point, args.thresh_db)
-        feats.update(drone=args.drone, frame=k, source_file=Path(args.iq_file).name, method="raw_iq")
-        rows.append(feats)
-        print(
-            f"[frame {k}] bursts={feats['n_burst_regions']} "
-            f"bw={feats['estimated_bandwidth_mhz']:.2f}MHz "
-            f"dur={feats['estimated_burst_duration_ms']:.3f}ms "
-            f"hop={feats['estimated_hopping_interval_ms']}ms "
-            f"span={feats['estimated_hop_span_mhz']:.1f}MHz "
-            f"snr={feats['estimated_snr_db']:.1f}dB"
-        )
+    for iq_file in args.iq_files:
+        for k in range(args.n_frames):
+            iq = load_raw_iq(iq_file, count=n, offset_samples=k * n)
+            if len(iq) < n:
+                break
+            feats = extract_iq_features(iq, args.fs, args.stft_point, args.thresh_db)
+            feats.update(drone=args.drone, frame=k, source_file=Path(iq_file).name, method="raw_iq")
+            rows.append(feats)
+            print(
+                f"[{Path(iq_file).name} frame {k}] bursts={feats['n_burst_regions']} "
+                f"bw={feats['estimated_bandwidth_mhz']:.2f}MHz "
+                f"dur={feats['estimated_burst_duration_ms']:.3f}ms "
+                f"hop={feats['estimated_hopping_interval_ms']}ms "
+                f"span={feats['estimated_hop_span_mhz']:.1f}MHz "
+                f"snr={feats['estimated_snr_db']:.1f}dB"
+            )
 
     df = pd.DataFrame(rows)
     out = Path("outputs/real_samples/feature_params_iq.csv")

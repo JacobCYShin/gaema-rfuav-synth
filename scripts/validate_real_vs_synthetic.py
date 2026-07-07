@@ -54,7 +54,11 @@ def hist_distance(h1: np.ndarray, h2: np.ndarray, cfg: dict) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--drone", required=True)
-    ap.add_argument("--iq", required=True, help="real raw IQ file")
+    ap.add_argument(
+        "--iq", nargs="+", required=True,
+        help="real raw IQ file(s); pass temporally distant files so the "
+        "real-vs-real baseline reflects true within-drone variability",
+    )
     ap.add_argument("--fs", type=float, default=100e6)
     ap.add_argument("--seed", type=int, default=1234)
     args = ap.parse_args()
@@ -66,24 +70,29 @@ def main() -> None:
     stft_point = int(acfg["stft_point"])
     thresh_db = float(acfg["thresh_db"])
 
-    # --- real frames
+    # --- real frames (spread across the given files)
+    per_file = max(int(acfg["n_real_frames"]) // len(args.iq), 2)
     real_feats, real_hists = [], []
-    for k in range(int(acfg["n_real_frames"])):
-        iq = load_raw_iq(args.iq, count=n, offset_samples=k * n)
-        if len(iq) < n:
-            break
-        real_feats.append(extract_iq_features(iq, args.fs, stft_point, thresh_db))
-        real_hists.append(db_over_floor_hist(iq, args.fs, acfg))
+    for path in args.iq:
+        for k in range(per_file):
+            iq = load_raw_iq(path, count=n, offset_samples=k * n)
+            if len(iq) < n:
+                break
+            real_feats.append(extract_iq_features(iq, args.fs, stft_point, thresh_db))
+            real_hists.append(db_over_floor_hist(iq, args.fs, acfg))
     real = pd.DataFrame(real_feats)
-    print(f"[real] {len(real)} frames analyzed")
+    print(f"[real] {len(real)} frames analyzed from {len(args.iq)} file(s)")
 
     # --- synthetic frames (fitted params via exporter priority; real background if available)
     bg_path = Path("outputs/real_samples/backgrounds") / f"{args.drone}.npy"
     snr = float(real["estimated_snr_db"].median())
+    # match the real capture's structure: include the video/TDD population iff present
+    has_video = bool(real["n_video_regions"].median() >= 1)
+    label = "rfuav_fhss_video_like" if has_video else "rfuav_fhss_like"
     synth_feats, synth_hists = [], []
     for j in range(int(acfg["n_synth_frames"])):
         spec = SynthSpec(
-            label="rfuav_fhss_like",
+            label=label,
             seed=args.seed + j,
             snr_db=snr,
             drone=args.drone,
@@ -98,8 +107,11 @@ def main() -> None:
     print(f"[synth] {len(synth)} frames generated (snr={snr:.1f} dB, background={'real' if bg_path.exists() else 'awgn'})")
 
     # --- feature criteria
+    metrics = dict(METRICS)
+    if has_video:
+        metrics["video_bandwidth"] = ("estimated_video_bandwidth_mhz", "bandwidth_rel_err")
     rows, all_pass = [], True
-    for name, (key, thr_key) in METRICS.items():
+    for name, (key, thr_key) in metrics.items():
         rv, sv = float(real[key].median()), float(synth[key].median())
         err = abs(sv - rv) / max(abs(rv), 1e-9)
         ok = err <= float(thr[thr_key])
