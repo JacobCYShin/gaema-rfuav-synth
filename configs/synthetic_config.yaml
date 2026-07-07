@@ -1,0 +1,53 @@
+# Synthetic dataset generation plan (V0 preview set).
+# Every sample is reproducible from (label, drone, snr_db, seed) + this file;
+# the generator additionally dumps specs.json with the full per-sample spec.
+
+frame:
+  preset: rfuav_full    # default frame preset; override with --frame-preset
+  presets:
+    rfuav_full:         # RFUAV-compatible: pixel-scale matches real ImageSet frames
+      fs: 100.0e+6
+      duration_s: 0.1
+    dev_light:          # fast development preset (16x fewer samples per frame)
+      fs: 25.0e+6
+      duration_s: 0.05
+  save_iq: false        # 80 MB per full frame; IQ is regenerable from specs.json
+
+fhss:
+  # FHSBW (paper Table 4) = total hopping span. Per-burst bandwidth:
+  # burst_bw = max(FHSBW/divisor, min(FHSBW, floor_mhz))
+  burst_bw_floor_mhz: 3.0   # real MINI3 burst bw estimate ~3.0 MHz
+  burst_bw_divisor: 8.0     # real FUTABA burst bw estimate ~3.6 MHz (32/8=4)
+
+snr:
+  sweep: {start_db: -20, stop_db: 20, step_db: 2}   # RFUAV benchmark grid
+  default_db: 10
+
+impairments:
+  dc_offset_db: -18        # DC spike, dB relative to frame mean power (null = off)
+  iq_gain_imbalance_db: 0.2
+  iq_phase_imbalance_deg: 1.0
+  edge_rolloff_frac: 0.04  # receive-filter roll-off at band edges
+  edge_rolloff_db: 20
+
+augmentation:
+  freq_shift_mhz_range: [-15, 15]
+  fading_depth_db: 6
+  timing_jitter_ms: 0.2
+  dropout_prob: 0.1
+
+# V0 generation plan: per-class sample counts for the preview dataset
+plan:
+  drones: [DJI_MINI3, FUTABA_T14SG, DJI_MINI4_PRO, DJI_AVATA2, DJI_MAVIC3_PRO]
+  per_class:
+    noise_only: 2
+    rfuav_fhss_like: 5          # one per drone
+    rfuav_video_like: 3
+    rfuav_fhss_video_like: 5    # one per drone
+    wifi_like: 2
+    lora_iot_like: 2
+    mixed_interference: 2
+  snr_sweep_class: rfuav_fhss_video_like   # one drone swept over the SNR grid
+  snr_sweep_drone: DJI_MINI3
+  snr_sweep_step_db: 8          # subsample of the grid for the V0 preview (-20..20)
+  base_seed: 20260707

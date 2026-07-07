@@ -1,0 +1,37 @@
+# STFT presets. All replicate RFUAV's pipeline family (scipy.signal.stft,
+# two-sided + fftshift, 10*log10 magnitude); they differ in the knobs RFUAV
+# itself varies across repo code / published ImageSet / paper ablation.
+default_preset: rfuav_paper_best   # used for synthetic dataset generation
+compare_preset: rfuav_matlab_like  # used for real-vs-synthetic visual comparison
+
+presets:
+  # graphic/RawDataProcessor.py defaults (batch conversion path)
+  rfuav_repo:
+    stft_point: 1024
+    window: hamming
+    overlap_ratio: 0.5
+    colormap: jet
+    normalization: autoscale        # matplotlib per-frame autoscale, as in repo
+    dynamic_range_db: 70
+
+  # paper ablation optimum: STFT 256 + hot colormap
+  rfuav_paper_best:
+    stft_point: 256
+    window: hamming
+    overlap_ratio: 0.5
+    colormap: hot
+    normalization: fixed_db         # stable brightness across samples
+    dynamic_range_db: 70
+
+  # visual match for the published ImageSet (MATLAB stft: hann, 75% overlap, parula)
+  rfuav_matlab_like:
+    stft_point: 1024
+    window: hann
+    overlap_ratio: 0.75
+    colormap: parula_like
+    normalization: fixed_db
+    dynamic_range_db: 55
+
+image:
+  npy_size: [640, 640]      # (freq_bins, time_bins) of saved float32 dB arrays
+  png_size: [730, 855]      # (H, W); RFUAV ImageSet JPEGs are 1460x1710 (we render at 1/2)

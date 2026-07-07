@@ -1,0 +1,7 @@
+# Output layout and split settings.
+outputs_dir: outputs
+real_dir: outputs/real_samples
+synthetic_dir: outputs/synthetic_samples
+split:
+  valid_ratio: 0.2
+  seed: 0
