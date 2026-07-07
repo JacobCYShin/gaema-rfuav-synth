@@ -75,18 +75,29 @@ def main() -> None:
         # synthetic: same drone parameters, comparison preset.
         # The published ImageSet frames for the gate drones show the FHSS
         # control link only (no persistent video band), so compare fhss-only.
+        # Fitted params (configs/fitted_params.yaml) apply automatically via
+        # the exporter; a real background pool is used when available (it
+        # already carries ambient interference, so nothing extra is injected).
         label = "rfuav_fhss_like"
         frame = syn_cfg["frame"]["presets"][syn_cfg["frame"]["preset"]]
+        fitted_yaml = Path("configs/fitted_params.yaml")
+        fitted = {}
+        if fitted_yaml.exists():
+            import yaml
+
+            fitted = (yaml.safe_load(fitted_yaml.read_text()) or {}).get(drone, {})
+        bg = Path("outputs/real_samples/backgrounds") / f"{drone}.npy"
         spec = SynthSpec(
             label=label,
             seed=COMPARE_SEED + k,
-            snr_db=COMPARE_SNR_DB,
+            snr_db=float(fitted.get("snr_db_observed", COMPARE_SNR_DB)),
             drone=drone,
             fs=float(frame["fs"]),
             duration_s=float(frame["duration_s"]),
             burst_bw_floor_mhz=float(syn_cfg["fhss"]["burst_bw_floor_mhz"]),
             burst_bw_divisor=float(syn_cfg["fhss"]["burst_bw_divisor"]),
-            inject_interference=["wifi_like"],
+            background_path=str(bg) if bg.exists() else None,
+            inject_interference=[] if bg.exists() else ["wifi_like"],
             interference_power=0.3,
             notes="compare",
         )

@@ -29,6 +29,10 @@ class FHSSParams:
     # augmentation knobs applied at generation time
     timing_jitter_ms: float = 0.0
     dropout_prob: float = 0.0
+    # per-burst irregularity (real links are not clockwork):
+    amp_jitter_db: float = 0.0        # per-burst power ~ N(0, amp_jitter_db)
+    duration_jitter_frac: float = 0.0  # per-burst length +/- this fraction
+    freq_jitter_mhz: float = 0.0       # per-burst center-frequency wobble
     notes: str = ""
 
 
@@ -81,12 +85,20 @@ def generate_fhss(
         if params.timing_jitter_ms > 0:
             t0 += rng.uniform(-1, 1) * params.timing_jitter_ms * 1e-3
         i0 = int(round(t0 * fs))
-        if i0 >= n_total or i0 + burst_len <= 0:
+        n_burst = burst_len
+        if params.duration_jitter_frac > 0:
+            n_burst = max(int(round(burst_len * (1 + rng.uniform(-1, 1) * params.duration_jitter_frac))), 16)
+        if i0 >= n_total or i0 + n_burst <= 0:
             continue
         fc = float(channel_centers[pattern[k % hops_per_pattern]])
-        burst = band_limited_noise(burst_len, bw / fs, fc / fs, rng)
-        burst *= _burst_envelope(burst_len) * np.sqrt(params.burst_power)
-        a, b = max(i0, 0), min(i0 + burst_len, n_total)
+        if params.freq_jitter_mhz > 0:
+            fc += rng.uniform(-1, 1) * params.freq_jitter_mhz * 1e6
+        power = params.burst_power
+        if params.amp_jitter_db > 0:
+            power *= 10.0 ** (rng.normal(0.0, params.amp_jitter_db) / 10.0)
+        burst = band_limited_noise(n_burst, bw / fs, fc / fs, rng, shape="gauss")
+        burst *= _burst_envelope(n_burst) * np.sqrt(power)
+        a, b = max(i0, 0), min(i0 + n_burst, n_total)
         iq[a:b] += burst[a - i0 : b - i0]
         events.append(
             SignalEvent(

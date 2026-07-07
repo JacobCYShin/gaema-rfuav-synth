@@ -55,6 +55,14 @@ class SynthSpec:
     fading_depth_db: float = 0.0
     timing_jitter_ms: float = 0.0
     dropout_prob: float = 0.0
+    # per-burst irregularity (see FHSSParams)
+    amp_jitter_db: float = 0.0
+    duration_jitter_frac: float = 0.0
+    freq_jitter_mhz: float = 0.0
+    # real background mixing: path to a background pool .npy (complex64).
+    # When set, noise = a random crop of real capture background instead of
+    # AWGN, and the signal is scaled to hit snr_db against that background.
+    background_path: str | None = None
     inject_interference: list[str] = field(default_factory=list)  # wifi_like/lora_iot_like/mixed
     interference_power: float = 0.5  # relative to main signal power
     impairments: ImpairmentParams = field(default_factory=ImpairmentParams)
@@ -85,10 +93,32 @@ def _profile(spec: SynthSpec) -> DroneProfile:
     return DRONE_PROFILES[spec.drone]
 
 
+_FITTED_PARAMS_CACHE: dict | None = None
+
+
+def _fitted_params(drone: str) -> dict:
+    """Parameters fitted from real raw IQ (configs/fitted_params.yaml, written
+    by scripts/fit_drone_params.py). Highest priority when present."""
+    global _FITTED_PARAMS_CACHE
+    if _FITTED_PARAMS_CACHE is None:
+        path = Path(__file__).resolve().parent.parent.parent / "configs" / "fitted_params.yaml"
+        if path.exists():
+            import yaml
+
+            _FITTED_PARAMS_CACHE = yaml.safe_load(path.read_text()) or {}
+        else:
+            _FITTED_PARAMS_CACHE = {}
+    return _FITTED_PARAMS_CACHE.get(drone, {})
+
+
 def _gen_fhss(spec: SynthSpec, rng: np.random.Generator):
     p = _profile(spec)
-    ov = REAL_INFORMED_OVERRIDES.get(spec.drone or "", {})
-    burst_bw = max(p.fhsbw_mhz / spec.burst_bw_divisor, min(p.fhsbw_mhz, spec.burst_bw_floor_mhz))
+    # parameter priority: fitted (real raw IQ) > real-informed overrides > paper table
+    ov = {**REAL_INFORMED_OVERRIDES.get(spec.drone or "", {}), **_fitted_params(spec.drone or "")}
+    burst_bw = ov.get(
+        "burst_bw_mhz",
+        max(p.fhsbw_mhz / spec.burst_bw_divisor, min(p.fhsbw_mhz, spec.burst_bw_floor_mhz)),
+    )
     fhsdc = ov.get("fhsdc_ms", p.fhsdc_ms)
     params = FHSSParams(
         fhsbw_mhz=burst_bw,
@@ -96,8 +126,11 @@ def _gen_fhss(spec: SynthSpec, rng: np.random.Generator):
         fhsdc_ms=fhsdc,
         fhspp_ms=p.fhspp_ms or (fhsdc * 8),
         hop_span_mhz=ov.get("hop_span_mhz", p.fhsbw_mhz),
-        timing_jitter_ms=spec.timing_jitter_ms,
+        timing_jitter_ms=spec.timing_jitter_ms or ov.get("timing_jitter_ms", 0.0),
         dropout_prob=spec.dropout_prob,
+        amp_jitter_db=spec.amp_jitter_db or ov.get("amp_jitter_db", 0.0),
+        duration_jitter_frac=spec.duration_jitter_frac or ov.get("duration_jitter_frac", 0.0),
+        freq_jitter_mhz=spec.freq_jitter_mhz or ov.get("freq_jitter_mhz", 0.0),
     )
     return generate_fhss(params, spec.fs, spec.duration_s, rng)
 
@@ -188,6 +221,23 @@ def synthesize(spec: SynthSpec) -> tuple[np.ndarray, list[SignalEvent]]:
         events = [ev.shifted(spec.freq_shift_mhz * 1e6) for ev in events]
     if spec.fading_depth_db > 0:
         iq = amplitude_fading(iq, spec.fs, depth_db=spec.fading_depth_db, rng=rng)
+
+    if spec.background_path is not None:
+        # real-capture background: scale the signal against the pool's power
+        from ..rfuav.background_extractor import BackgroundPool
+
+        bg = BackgroundPool.load(spec.background_path).sample(len(iq), rng)
+        p_bg = measure_power(bg)
+        if spec.label == "noise_only" or spec.snr_db is None:
+            iq = bg
+        else:
+            p_sig = measure_power(iq)
+            if p_sig > 0:
+                iq = iq * np.sqrt(p_bg * 10.0 ** (spec.snr_db / 10.0) / p_sig)
+            iq = iq + bg
+        # the real background already carries the receiver's DC spike and
+        # band-edge roll-off; skip synthetic impairments to avoid doubling them
+        return iq, events
 
     if spec.label == "noise_only" or spec.snr_db is None:
         iq = iq + complex_awgn(len(iq), 1.0, rng)

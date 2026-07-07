@@ -1,0 +1,19 @@
+# Quantitative pass criteria for real-vs-synthetic validation (V1 gate).
+# Relative errors are |synthetic - real| / real on raw-IQ feature estimates,
+# with real = median over analyzed real frames.
+thresholds:
+  bandwidth_rel_err: 0.20          # occupied burst bandwidth
+  burst_duration_rel_err: 0.30
+  hopping_interval_rel_err: 0.30
+  # energy-histogram Wasserstein distance (dB-over-floor domain) must be
+  # below baseline_factor x the median real-vs-real pairwise distance
+  energy_hist_baseline_factor: 2.0
+
+analysis:
+  stft_point: 256
+  thresh_db: 5.0
+  n_real_frames: 5        # frames taken from the real raw IQ file
+  n_synth_frames: 3       # independently-seeded synthetic frames
+  frame_duration_s: 0.1
+  hist_range_db: [-10.0, 50.0]   # dB over per-frequency noise floor
+  hist_bins: 120
