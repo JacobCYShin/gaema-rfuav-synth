@@ -4,3 +4,13 @@ __pycache__/
 *.pyc
 .venv/
 .DS_Store
+
+# Local simulator artifacts
+apps/drone-rf-sim/node_modules/
+apps/drone-rf-sim/dist/
+apps/drone-rf-sim/media/frames/
+apps/drone-rf-sim/media/probes/
+apps/drone-rf-sim/coverage/
+apps/drone-rf-sim/test-results/
+apps/drone-rf-sim/playwright-report/
+apps/drone-rf-sim/*.log
