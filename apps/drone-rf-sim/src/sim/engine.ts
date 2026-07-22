@@ -14,6 +14,7 @@ import type {
   Waypoint,
   WorldPos,
 } from './types';
+import { FLIGHT_MODE_KO, FUSION_STATUS_KO, SIM_MODE_KO } from '../labels';
 
 let wpCounter = 1;
 
@@ -66,6 +67,10 @@ export class SimulationEngine {
   speedMult = 1;
   estimate: Estimate = { available: false, pos: { x: 0, y: 0, alt: 0 }, uncertainty: 0, confidence: 0, staleFor: 0 };
   status: FusionStatus = 'SEARCHING';
+  /** receiver thermal-noise floor from the RF model, dBm (UI derives SNR) */
+  rfNoiseFloor = -98;
+  /** emergent detection radius at the drone's current frequency, m */
+  detectionRange = 0;
   events: SimEvent[] = [];
   trails = new Map<EntityId | 'estimate', WorldPos[]>();
 
@@ -118,7 +123,7 @@ export class SimulationEngine {
   private applyScenario(doc: ScenarioDoc): void {
     this.drone = {
       id: 'drone-1',
-      name: 'DRONE-1',
+      name: '드론-1',
       pos: { ...doc.drone.home },
       heading: 0,
       home: { ...doc.drone.home },
@@ -130,10 +135,11 @@ export class SimulationEngine {
       loiterCenter: null,
       loiterAngle: 0,
       visible: true,
+      freqHz: doc.drone.freqHz ?? 2.45e9,
     };
     this.scouts = doc.scouts.map((s) => ({
       id: s.id,
-      name: `SCOUT ${s.id}`,
+      name: `스카우트 ${s.id}`,
       pos: { ...s.pos },
       heading: 0,
       waypoints: s.waypoints.map((w) => ({ ...w })),
@@ -157,7 +163,8 @@ export class SimulationEngine {
     this.replaySnapshot = null;
     this.prevDetecting = { A: false, B: false, C: false };
     this.rf.reset();
-    this.log('Scenario loaded');
+    this.primeRfReadouts();
+    this.log('시나리오 로드됨');
     this.emitStructure();
   }
 
@@ -168,6 +175,7 @@ export class SimulationEngine {
       drone: {
         home: { ...this.drone.home },
         waypoints: this.drone.waypoints.map((w) => ({ ...w })),
+        freqHz: this.drone.freqHz,
       },
       scouts: this.scouts.map((s) => ({
         id: s.id,
@@ -196,7 +204,7 @@ export class SimulationEngine {
       if (this.drone.flightMode === 'IDLE' && this.drone.waypoints.length > 0) {
         this.drone.flightMode = 'MISSION';
         this.drone.nextWpId = this.drone.waypoints[0].id;
-        this.log('Mission started', 'info');
+        this.log('임무 시작', 'info');
       }
     }
     if (mode === 'replay') this.snapshotLiveSimulation();
@@ -206,7 +214,7 @@ export class SimulationEngine {
       this.replayPlaying = true;
       this.applyReplayFrame(0);
     }
-    this.log(`Mode → ${mode.toUpperCase()}`);
+    this.log(`모드 → ${SIM_MODE_KO[mode]}`);
     this.emitStructure();
   }
 
@@ -313,7 +321,7 @@ export class SimulationEngine {
       this.drone.nextWpId = wp.id;
     }
     if (!isDrone && ent.nextWpId === null) ent.nextWpId = wp.id;
-    this.log(`${ent.name}: waypoint ${ent.waypoints.length} added`);
+    this.log(`${ent.name}: 경유지 ${ent.waypoints.length} 추가`);
     this.emitStructure();
     return wp;
   }
@@ -341,7 +349,7 @@ export class SimulationEngine {
     const wasNext = ent.nextWpId === wpId;
     ent.waypoints.splice(idx, 1);
     if (wasNext) ent.nextWpId = ent.waypoints[idx]?.id ?? ent.waypoints[0]?.id ?? null;
-    this.log(`${ent.name}: waypoint removed`);
+    this.log(`${ent.name}: 경유지 삭제`);
     this.emitStructure();
   }
 
@@ -386,7 +394,7 @@ export class SimulationEngine {
       }
       d.nextWpId = best?.id ?? null;
     }
-    this.log(`DRONE-1: ${mode}`, mode === 'RTH' ? 'warn' : 'info');
+    this.log(`${this.drone.name}: ${FLIGHT_MODE_KO[mode]}`, mode === 'RTH' ? 'warn' : 'info');
     this.emitChange();
   }
 
@@ -396,10 +404,19 @@ export class SimulationEngine {
     this.emitChange();
   }
 
+  /** switch the drone's RF band; higher frequency ⇒ more path loss, shorter detection range */
+  setDroneFrequency(freqHz: number): void {
+    if (!Number.isFinite(freqHz) || freqHz <= 0 || this.drone.freqHz === freqHz) return;
+    this.drone.freqHz = freqHz;
+    if (this.mode !== 'run') this.primeRfReadouts();
+    this.log(`드론 주파수 → ${(freqHz / 1e9).toFixed(2)} GHz`);
+    this.emitChange();
+  }
+
   toggleReceiver(id: ScoutId): void {
     const s = this.scouts.find((q) => q.id === id)!;
     s.receiverOn = !s.receiverOn;
-    this.log(`${s.name}: receiver ${s.receiverOn ? 'ON' : 'OFF'}`, s.receiverOn ? 'info' : 'warn');
+    this.log(`${s.name}: 수신기 ${s.receiverOn ? 'ON' : 'OFF'}`, s.receiverOn ? 'info' : 'warn');
     this.emitChange();
   }
 
@@ -413,7 +430,7 @@ export class SimulationEngine {
     ent.waypoints = [];
     ent.nextWpId = null;
     if (id === 'drone-1' && this.drone.flightMode === 'MISSION') this.drone.flightMode = 'HOLD';
-    this.log(`${ent.name}: route cleared`);
+    this.log(`${ent.name}: 경로 초기화`);
     this.emitStructure();
   }
 
@@ -491,7 +508,7 @@ export class SimulationEngine {
           const next = d.waypoints[idx + 1];
           d.nextWpId = next?.id ?? null;
           if (!next) d.flightMode = 'HOLD';
-          if (!next) this.log('DRONE-1: mission leg complete — holding', 'info');
+          if (!next) this.log(`${d.name}: 구간 비행 완료 — 정지`, 'info');
         }
         break;
       }
@@ -512,7 +529,7 @@ export class SimulationEngine {
         const arrived = this.moveTowards(d, d.home.x, d.home.y, Math.max(speed, 12), dt);
         if (arrived) {
           d.flightMode = 'HOLD';
-          this.log('DRONE-1: reached home — holding', 'info');
+          this.log(`${d.name}: 복귀 완료 — 정지`, 'info');
         }
         break;
       }
@@ -536,6 +553,25 @@ export class SimulationEngine {
     }
   }
 
+  /**
+   * Refresh the frequency-dependent RF readouts (noise floor, detection radius)
+   * without advancing detection — a grounded, zero-dt probe. Lets the panels
+   * show the detection range in EDIT mode and right after a band switch, before
+   * the sim starts ticking.
+   */
+  private primeRfReadouts(): void {
+    const out = this.rf.update({
+      dronePos: this.drone.pos,
+      droneAirborne: false,
+      scouts: this.scouts.map((s) => ({ id: s.id, pos: s.pos, receiverOn: s.receiverOn })),
+      dt: 0,
+      time: this.simTime,
+      frequencyHz: this.drone.freqHz,
+    });
+    this.rfNoiseFloor = out.noiseFloorDbm;
+    this.detectionRange = out.detectionRangeM;
+  }
+
   private updateRf(dt: number): void {
     const out = this.rf.update({
       dronePos: this.drone.pos,
@@ -543,18 +579,21 @@ export class SimulationEngine {
       scouts: this.scouts.map((s) => ({ id: s.id, pos: s.pos, receiverOn: s.receiverOn })),
       dt,
       time: this.simTime,
+      frequencyHz: this.drone.freqHz,
     });
+    this.rfNoiseFloor = out.noiseFloorDbm;
+    this.detectionRange = out.detectionRangeM;
     for (const s of this.scouts) {
       const r = out.perScout[s.id];
       s.rssi = r.rssi;
       s.confidence = r.confidence;
       s.detecting = r.detecting;
-      if (r.detecting && !this.prevDetecting[s.id]) this.log(`${s.name}: signal detected`, 'detect');
-      if (!r.detecting && this.prevDetecting[s.id]) this.log(`${s.name}: signal lost`, 'warn');
+      if (r.detecting && !this.prevDetecting[s.id]) this.log(`${s.name}: 신호 탐지`, 'detect');
+      if (!r.detecting && this.prevDetecting[s.id]) this.log(`${s.name}: 신호 상실`, 'warn');
       this.prevDetecting[s.id] = r.detecting;
     }
     if (out.status !== this.status) {
-      this.log(`Fusion status → ${out.status}`, out.status === 'TRACKING' ? 'detect' : out.status === 'LOST' ? 'warn' : 'info');
+      this.log(`융합 상태 → ${FUSION_STATUS_KO[out.status]}`, out.status === 'TRACKING' ? 'detect' : out.status === 'LOST' ? 'warn' : 'info');
     }
     this.estimate = out.estimate;
     this.status = out.status;

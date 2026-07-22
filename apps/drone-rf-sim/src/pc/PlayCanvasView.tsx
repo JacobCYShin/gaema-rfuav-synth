@@ -14,7 +14,7 @@ import { clearPrimitiveMeshCache } from './scene/builders';
 const SCOUT_IDS: ScoutId[] = ['A', 'B', 'C'];
 
 interface DragState {
-  kind: 'entity' | 'wp';
+  kind: 'entity' | 'wp' | 'ground';
   entityId: EntityId;
   wpId?: string;
   startX: number;
@@ -152,21 +152,36 @@ export function PlayCanvasView(): JSX.Element {
     const onPointerDown = (e: PointerEvent): void => {
       if (e.button !== 0) return;
       drag = hitTest(e.clientX, e.clientY);
+      // empty ground + a selected object → drag anywhere to reposition it
+      // (free camera keeps its drag-to-rotate, so skip in cam mode 4)
+      if (!drag) {
+        const sel = ui.getState().selectedId;
+        if (sel && ui.getState().camMode !== 4 && groundPick(e.clientX, e.clientY)) {
+          drag = { kind: 'ground', entityId: sel, startX: e.clientX, startY: e.clientY, moved: false };
+        }
+      }
     };
     const onPointerMove = (e: PointerEvent): void => {
       if (!drag) return;
-      if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 4) return;
+      // ground drags use a larger threshold so a double-click (add waypoint)
+      // with slight hand jitter never teleports the selected object
+      const threshold = drag.kind === 'ground' ? 8 : 4;
+      if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < threshold) return;
       drag.moved = true;
       const g = groundPick(e.clientX, e.clientY);
       if (!g) return;
-      if (drag.kind === 'entity') engine.moveEntity(drag.entityId, g.x, g.y);
-      else if (drag.wpId) engine.moveWaypoint(drag.entityId, drag.wpId, g.x, g.y);
+      if (drag.kind === 'wp') {
+        if (drag.wpId) engine.moveWaypoint(drag.entityId, drag.wpId, g.x, g.y);
+      } else {
+        engine.moveEntity(drag.entityId, g.x, g.y);
+      }
     };
     const onPointerUp = (e: PointerEvent): void => {
       if (!drag) return;
       if (!drag.moved) {
         if (drag.kind === 'entity') ui.getState().select(drag.entityId);
-        else ui.getState().select(drag.entityId, drag.wpId);
+        else if (drag.kind === 'wp') ui.getState().select(drag.entityId, drag.wpId);
+        // ground click without movement: keep selection (double-click adds waypoints)
       }
       void e;
       drag = null;
@@ -222,11 +237,11 @@ export function PlayCanvasView(): JSX.Element {
         return id;
       };
       const d = engine.drone;
-      chip(mark('drone'), 'DRONE-1', COLORS.drone, d.visible ? worldToScreen(d.pos.x, d.pos.alt + 9, d.pos.y) : null);
+      chip(mark('drone'), d.name, COLORS.drone, d.visible ? worldToScreen(d.pos.x, d.pos.alt + 9, d.pos.y) : null);
       for (const s of engine.scouts) {
         chip(
           mark('scout-' + s.id),
-          `SCOUT ${s.id}`,
+          s.rssi !== null ? `${s.name} · ${s.rssi.toFixed(0)}dBm` : s.name,
           COLORS[s.id],
           s.visible ? worldToScreen(s.pos.x, s.pos.alt + 9, s.pos.y) : null,
           { dim: !s.detecting },
@@ -235,11 +250,11 @@ export function PlayCanvasView(): JSX.Element {
       const est = engine.estimate;
       chip(
         mark('est'),
-        `EST ±${est.uncertainty}m`,
+        `추정 ±${est.uncertainty}m`,
         COLORS.estimate,
         est.available ? worldToScreen(est.pos.x, est.pos.alt + 12, est.pos.y) : null,
       );
-      chip(mark('home'), 'HOME', COLORS.drone, worldToScreen(d.home.x, 3, d.home.y), { small: true, dim: true });
+      chip(mark('home'), '홈', COLORS.drone, worldToScreen(d.home.x, 3, d.home.y), { small: true, dim: true });
       displayedWaypoints().forEach(({ owner, wp }, i) => {
         const a = pinAnchor(wp);
         const colorHex = owner === 'drone-1' ? '#4db8ff' : COLORS[owner as ScoutId];

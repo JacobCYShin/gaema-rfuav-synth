@@ -27,12 +27,14 @@ const EVENTS = [
   { t: 0.0, action: 'run' }, // tactical: takeoff & ingress; first detection ≈ t=22
   { t: 24.0, action: 'cam3' }, // drone cinematic, estimate marker alongside
   { t: 34.0, action: 'cam1' }, // tactical: fusion tightening → TRACKING
-  { t: 42.0, action: 'scoutA' }, // scout follow view
+  { t: 42.0, action: 'scoutA' }, // scout follow view + live spectrum/waterfall panel
+  { t: 47.0, action: 'camFp' }, // scout first-person while the spectrum keeps painting
   { t: 52.0, action: 'cam1drone' }, // back to tactical, drone selected
   { t: 54.0, action: 'rerouteWp' }, // live route edit while flying
+  { t: 58.0, action: 'analytics' }, // error/RSSI/trajectory charts over the closing acts
   { t: 64.0, action: 'rth' }, // return home — route turn visible on tactical
   { t: 67.0, action: 'cam3' }, // cinematic of the egress
-  { t: 74.0, action: 'cam1' }, // closing overview
+  { t: 74.0, action: 'cam1' }, // closing overview with analytics strip
 ];
 
 const server = await startPreview({ rootDir });
@@ -87,6 +89,12 @@ try {
         case 'scoutA':
           ui.getState().select('A');
           ui.getState().setCamMode(2);
+          break;
+        case 'camFp':
+          ui.getState().setCamMode(5);
+          break;
+        case 'analytics':
+          if (!ui.getState().showAnalytics) ui.getState().toggle('showAnalytics');
           break;
         case 'rerouteWp': {
           const wp = engine.drone.waypoints.find((w) => w.id === engine.drone.nextWpId);

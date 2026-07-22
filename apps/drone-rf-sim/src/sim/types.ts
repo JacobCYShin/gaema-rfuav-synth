@@ -41,6 +41,8 @@ export interface DroneState {
   loiterCenter: WorldPos | null;
   loiterAngle: number;
   visible: boolean;
+  /** operating carrier frequency of the drone's RF link, Hz (2.45e9 / 5.8e9) */
+  freqHz: number;
 }
 
 export interface ScoutState {
@@ -94,6 +96,8 @@ export interface RfInput {
   scouts: RfScoutInput[];
   dt: number;
   time: number;
+  /** drone RF carrier frequency, Hz — sets the path loss (higher = more loss) */
+  frequencyHz: number;
 }
 
 export interface RfScoutOutput {
@@ -106,6 +110,10 @@ export interface RfOutput {
   perScout: Record<ScoutId, RfScoutOutput>;
   estimate: Estimate;
   status: FusionStatus;
+  /** receiver thermal-noise floor, dBm — lets the UI derive SNR = RSSI − N */
+  noiseFloorDbm: number;
+  /** emergent detection radius at the current frequency, m (SNR = threshold) */
+  detectionRangeM: number;
 }
 
 /**
@@ -125,6 +133,8 @@ export interface ScenarioDoc {
   drone: {
     home: WorldPos;
     waypoints: Waypoint[];
+    /** operating frequency, Hz; optional for backward-compat (defaults 2.45e9) */
+    freqHz?: number;
   };
   scouts: {
     id: ScoutId;

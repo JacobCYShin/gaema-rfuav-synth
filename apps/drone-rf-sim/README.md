@@ -33,13 +33,18 @@ npm run record   # 78초 데모 시나리오를 media/simulation-demo.mp4로 녹
 |---|---|
 | 아이콘 클릭 | 드론/Scout 선택 |
 | 아이콘·핀 드래그 | 위치/Waypoint 이동 (실행 중에도 가능) |
+| 빈 땅 드래그 (선택 상태) | 선택한 객체를 그 지점으로 이동 |
 | 지면 더블클릭 | 선택 객체에 Waypoint 추가 |
-| 우측 패널 | 고도·속도, HOLD/LOITER/RTH/RESUME, 오버라이드, 순서변경/삭제 |
+| 우측 패널 | 고도·속도, HOLD/LOITER/RTH/RESUME, 오버라이드, 순서변경/삭제, Scout 스펙트럼 |
 | `Del` / `Esc` | Waypoint 삭제 / 선택 해제 |
 | `Space` / `R` | RUN↔PAUSE / RESET |
-| `1`–`4` | Tactical / Scout Follow / Drone Follow / Free Camera |
-| 하단 바 | EDIT·RUN·PAUSE·REPLAY, STEP, 배속, 리플레이 타임라인 |
+| `1`–`5` | Tactical / Scout Follow / Drone Follow / Free Camera / Scout 1인칭 |
+| 하단 바 | EDIT·RUN·PAUSE·REPLAY, STEP, 배속, 분석 패널(차트+CSV), 간단/고급 모드 |
 | 좌측 패널 | 객체 목록·표시 토글, 시나리오 Save/Load/Export/Import |
+
+기본은 필수 컨트롤만 보이는 **간단 모드**이며, 하단 `고급 설정 ▸`으로 전체 UI를
+켭니다. `분석` 버튼은 추정 오차·RSSI 시계열·실제 vs 추정 궤적 차트와
+`sim_log.csv` 내보내기를 제공합니다 (0.2 s 리플레이 버퍼 재사용).
 
 ## 아키텍처
 

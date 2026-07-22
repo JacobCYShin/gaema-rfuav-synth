@@ -4,7 +4,7 @@ import { MockRfModel } from '../sim/rf';
 import { defaultScenario } from '../sim/scenario';
 import type { EntityId } from '../sim/types';
 
-export type CamMode = 1 | 2 | 3 | 4; // tactical / scout follow / drone follow / free
+export type CamMode = 1 | 2 | 3 | 4 | 5; // tactical / scout follow / drone follow / free / scout first-person
 export type RendererMode = 'playcanvas' | 'cesium';
 
 /** the one engine instance shared by React UI, the Cesium layer and tests */
@@ -22,11 +22,15 @@ interface UiState {
   showTrails: boolean;
   showUncertainty: boolean;
   showLabels: boolean;
+  /** hides non-essential panels/controls; advanced mode shows everything */
+  simpleMode: boolean;
+  /** bottom analytics strip: error/RSSI time series + trajectory + CSV export */
+  showAnalytics: boolean;
   select(id: EntityId | null, wpId?: string | null): void;
   selectWaypoint(wpId: string | null): void;
   setCamMode(m: CamMode): void;
   setRenderer(renderer: RendererMode): void;
-  toggle(key: 'showTrails' | 'showUncertainty' | 'showLabels'): void;
+  toggle(key: 'showTrails' | 'showUncertainty' | 'showLabels' | 'simpleMode' | 'showAnalytics'): void;
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -39,6 +43,8 @@ export const useUi = create<UiState>((set) => ({
   showTrails: true,
   showUncertainty: true,
   showLabels: true,
+  simpleMode: true,
+  showAnalytics: false,
   select: (id, wpId = null) => set({ selectedId: id, selectedWpId: wpId }),
   selectWaypoint: (wpId) => set({ selectedWpId: wpId }),
   setCamMode: (m) => set({ camMode: m }),

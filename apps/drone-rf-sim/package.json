@@ -12,6 +12,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4180 --strictPort",
     "verify": "npm run build && node scripts/verify.mjs",
+    "verify:propagation": "node scripts/verify-propagation.mjs",
+    "verify:rf": "node scripts/verify-rf-integration.mjs",
     "record": "npm run build && node scripts/record.mjs"
   },
   "dependencies": {

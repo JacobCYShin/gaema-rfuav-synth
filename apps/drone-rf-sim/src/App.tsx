@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BottomBar, EventLog, LeftPanel, Legend, RightPanel, TopBar } from './ui/panels';
+import { BottomBar, CamHint, EventLog, LeftPanel, Legend, RightPanel, TopBar } from './ui/panels';
+import { AnalyticsPanel } from './ui/analytics';
 import { engine, useUi } from './state/store';
 
 // renderer is chosen at load time and code-split so only one engine ships:
@@ -19,8 +20,8 @@ export function App(): JSX.Element {
       if (k === ' ') {
         e.preventDefault();
         engine.setMode(engine.mode === 'run' ? 'pause' : 'run');
-      } else if (k === '1' || k === '2' || k === '3' || k === '4') {
-        ui.setCamMode(Number(k) as 1 | 2 | 3 | 4);
+      } else if (k === '1' || k === '2' || k === '3' || k === '4' || k === '5') {
+        ui.setCamMode(Number(k) as 1 | 2 | 3 | 4 | 5);
       } else if (k === 'r') {
         engine.reset();
       } else if (k === 'delete' || k === 'backspace') {
@@ -49,6 +50,8 @@ export function App(): JSX.Element {
       <RightPanel />
       <BottomBar />
       <EventLog />
+      <AnalyticsPanel />
+      <CamHint />
       <Legend />
     </div>
   );

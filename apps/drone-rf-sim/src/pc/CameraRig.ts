@@ -132,6 +132,13 @@ export class CameraRig {
         -s.pos.y - f.z * back - f.x * 10,
       );
       this.desiredTarget.set(s.pos.x + f.x * 45, s.pos.alt + 4, -s.pos.y + f.z * 45);
+    } else if (mode === 5) {
+      // scout first-person: eye slightly ahead of the rig so the body model
+      // stays out of frame, gaze a touch below the horizon
+      const s = engine.getEntity(selectedScout);
+      const f = dirOf(Math.PI - s.heading);
+      this.desiredPos.set(s.pos.x + f.x * 3, s.pos.alt + 4.1, -s.pos.y + f.z * 3);
+      this.desiredTarget.set(s.pos.x + f.x * 70, s.pos.alt + 2.4, -s.pos.y + f.z * 70);
     } else {
       // dt is already simulation-clock time during video capture
       this.orbitAngle += dt * 0.1;
@@ -150,7 +157,7 @@ export class CameraRig {
       this.curTarget.copy(this.desiredTarget);
       this.snapNext = false;
     } else {
-      const k = damp(mode === 1 ? 2.6 : 4, dt);
+      const k = damp(mode === 1 ? 2.6 : mode === 5 ? 8 : 4, dt);
       this.curPos.lerp(this.curPos, this.desiredPos, k);
       this.curTarget.lerp(this.curTarget, this.desiredTarget, k);
     }

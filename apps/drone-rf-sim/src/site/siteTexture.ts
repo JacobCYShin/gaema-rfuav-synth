@@ -15,6 +15,90 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+// ------------------------------------------------------------------- city
+/** one extrudable building: engine-coord footprint center + size + height */
+export interface CityBuilding {
+  x: number;
+  y: number;
+  w: number; // east-west extent, m
+  d: number; // north-south extent, m
+  h: number; // height, m
+  style: number; // facade variant index
+}
+
+/** city districts around the protected site (engine coords, axis-aligned) */
+const DISTRICTS: { x0: number; x1: number; y0: number; y1: number; hMin: number; hMax: number }[] = [
+  { x0: 520, x1: 1380, y0: 140, y1: 950, hMin: 28, hMax: 88 }, // NE downtown
+  { x0: -460, x1: 360, y0: 500, y1: 1300, hMin: 9, hMax: 24 }, // N residential
+  { x0: -1420, x1: -640, y0: -60, y1: 760, hMin: 14, hMax: 46 }, // W business
+  { x0: 380, x1: 1340, y0: -1280, y1: -420, hMin: 10, hMax: 36 }, // SE mixed
+  { x0: -1440, x1: -780, y0: -1380, y1: -880, hMin: 8, hMax: 18 }, // SW village
+];
+
+const WATER = { x: -620, y: -560, r: 230 };
+
+/** approximate road center-lines (same control points the painter uses) */
+export const ROAD_LINES: [number, number][][] = [
+  [
+    [-1600, -420],
+    [-200, -460],
+    [60, -260],
+    [320, -60],
+    [1600, -40],
+  ],
+  [
+    [-60, 1600],
+    [-120, 400],
+    [0, 60],
+    [60, -260],
+  ],
+];
+
+function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+}
+
+export function nearRoadLine(x: number, y: number, margin: number): boolean {
+  for (const road of ROAD_LINES) {
+    for (let i = 0; i < road.length - 1; i++) {
+      if (distToSegment(x, y, road[i][0], road[i][1], road[i + 1][0], road[i + 1][1]) < margin) return true;
+    }
+  }
+  return false;
+}
+
+let cityCache: CityBuilding[] | null = null;
+
+/** deterministic building layout shared by the texture painter (footprints)
+ *  and the PlayCanvas environment (3D extrusion) so both views agree */
+export function cityBuildings(): CityBuilding[] {
+  if (cityCache) return cityCache;
+  const rnd = mulberry32(424242);
+  const out: CityBuilding[] = [];
+  for (const d of DISTRICTS) {
+    const CELL = 110;
+    for (let cx = d.x0 + CELL / 2; cx < d.x1; cx += CELL) {
+      for (let cy = d.y0 + CELL / 2; cy < d.y1; cy += CELL) {
+        if (rnd() > 0.62) continue;
+        const x = cx + (rnd() * 2 - 1) * 14;
+        const y = cy + (rnd() * 2 - 1) * 14;
+        if (Math.hypot(x - WATER.x, y - WATER.y) < WATER.r) continue;
+        if (Math.abs(x) > SITE_HALF - 90 || Math.abs(y) > SITE_HALF - 90) continue;
+        if (nearRoadLine(x, y, 62)) continue;
+        const w = 42 + rnd() * 34;
+        const dd = 42 + rnd() * 34;
+        const h = d.hMin + rnd() * (d.hMax - d.hMin);
+        out.push({ x, y, w, d: dd, h, style: Math.floor(rnd() * 5) });
+      }
+    }
+  }
+  cityCache = out;
+  return out;
+}
+
 /** paints a stylized park/facility ground texture onto a canvas.
  *  canvas maps to [-SITE_HALF, SITE_HALF]^2 meters, north = up */
 export function paintSiteTexture(size: number): HTMLCanvasElement {
@@ -56,6 +140,16 @@ export function paintSiteTexture(size: number): HTMLCanvasElement {
     }
   }
   ctx.globalAlpha = 1;
+
+  // city blocks: concrete pads + building footprints (extruded in 3D view)
+  for (const b of cityBuildings()) {
+    ctx.fillStyle = '#8f8d85';
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(px(b.x - b.w / 2 - 9), py(b.y + b.d / 2 + 9), sc(b.w + 18), sc(b.d + 18));
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#75746e';
+    ctx.fillRect(px(b.x - b.w / 2), py(b.y + b.d / 2), sc(b.w), sc(b.d));
+  }
 
   // service roads: north-south + east-west crossing near the facility
   ctx.strokeStyle = '#565b60';

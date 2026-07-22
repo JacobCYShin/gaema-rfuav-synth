@@ -8,27 +8,35 @@ import type {
   ScoutId,
   WorldPos,
 } from './types';
+import {
+  DEFAULT_LINK_BUDGET,
+  detectionRangeM,
+  distanceFromRssi,
+  linkBudget,
+  noiseFloorDbm,
+  type LinkBudgetParams,
+} from './propagation';
 
 /**
- * Mock RF model v2 — still a placeholder for a real Python RF pipeline
- * (e.g. an RFUAV-style synthetic-signal model such as gaema-rfuav-synth),
- * but structured the way that pipeline would report results:
+ * RF fusion model. Per-scout received power is now computed from a physically
+ * grounded link budget (see propagation.ts — Friis free-space loss +
+ * log-distance path loss + thermal-noise floor), so RSSI and SNR are traceable
+ * to electromagnetics rather than tuned constants. The layers on top —
+ * detection with SNR hysteresis, confidence smoothing, weighted
+ * multilateration and the uncertainty estimate — remain engineering heuristics:
  *
- *  1. per-scout RSSI from a log-distance path-loss model + shadowing noise
- *  2. detection decided by SNR against a noise floor (with hysteresis)
- *  3. RSSI inverted back to a noisy range estimate per scout
+ *  1. per-scout RSSI/SNR from the physical link budget + shadowing (propagation.ts)
+ *  2. detection decided by SNR against the thermal-noise floor (with hysteresis)
+ *  3. RSSI inverted back to a range estimate per scout (physical inverse)
  *  4. fused position from weighted multilateration over detecting scouts
  *  5. uncertainty radius from ranging residuals + geometry quality
  *
- * Swap this class for a WebSocket bridge implementing the same RfModel
- * interface to connect the real model — nothing else changes.
+ * The SNR here is exactly what gaema-rfuav-synth's add_awgn_at_snr consumes, so
+ * swapping this class for a WebSocket bridge to that pipeline needs no other
+ * change — the RfModel interface is the seam.
  */
 
-const NOISE_FLOOR_DBM = -95;
-const PL0_DBM = -38; // received power at reference distance
-const D0 = 10; // reference distance, m
-const PATH_LOSS_EXP = 2.2;
-const SNR_DETECT_DB = 14; // with hysteresis + confidence ramp: effective range ≈ 770 m
+const SNR_DETECT_DB = 14; // detection threshold → emergent radius ≈ 1.3 km @ 2.45 GHz with the default link budget
 const SEEDS: Record<ScoutId, number> = { A: 1.3, B: 2.7, C: 4.1 };
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -43,14 +51,15 @@ function noise(t: number, seed: number): number {
   );
 }
 
-function rssiAt(dist: number, t: number, seed: number): number {
-  const pl = PL0_DBM - 10 * PATH_LOSS_EXP * Math.log10(Math.max(dist, D0) / D0);
-  return clamp(pl + noise(t, seed) * 2.2, -96, -35);
-}
-
-/** invert the path-loss model back to a range estimate */
-function rangeFromRssi(rssi: number): number {
-  return D0 * Math.pow(10, (PL0_DBM - rssi) / (10 * PATH_LOSS_EXP));
+/**
+ * Physically-grounded received power (dBm) for one scout, with deterministic
+ * pseudo-shadowing so replays and video capture stay byte-reproducible. The
+ * shadowing term stands in for a log-normal Xσ of the configured σ.
+ */
+function rssiAt(dist: number, t: number, seed: number, p: LinkBudgetParams): number {
+  const shadowingDb = noise(t, seed) * p.shadowingSigmaDb;
+  const { rssiDbm } = linkBudget(dist, p, shadowingDb);
+  return clamp(rssiDbm, -115, -20);
 }
 
 interface Ranging {
@@ -97,6 +106,11 @@ export class MockRfModel implements RfModel {
   private est: WorldPos | null = null;
   private uncertainty = 400;
   private staleFor = 0;
+  private readonly params: LinkBudgetParams;
+
+  constructor(params: Partial<LinkBudgetParams> = {}) {
+    this.params = { ...DEFAULT_LINK_BUDGET, ...params };
+  }
 
   reset(): void {
     this.conf = { A: 0, B: 0, C: 0 };
@@ -108,10 +122,13 @@ export class MockRfModel implements RfModel {
 
   update(input: RfInput): RfOutput {
     const { dronePos, scouts, dt, time } = input;
+    // the drone's operating frequency sets the path loss for this tick
+    const p: LinkBudgetParams = { ...this.params, frequencyHz: input.frequencyHz };
     const perScout = {} as Record<ScoutId, RfScoutOutput>;
     const rangings: Ranging[] = [];
     const activeConfs: number[] = [];
     let nDetecting = 0;
+    const noiseFloor = noiseFloorDbm(p);
 
     for (const s of scouts) {
       const dist = Math.hypot(
@@ -120,8 +137,8 @@ export class MockRfModel implements RfModel {
         dronePos.alt - s.pos.alt,
       );
       const listening = s.receiverOn && input.droneAirborne;
-      const rssi = listening ? rssiAt(dist, time, SEEDS[s.id]) : null;
-      const snr = rssi === null ? -Infinity : rssi - NOISE_FLOOR_DBM;
+      const rssi = listening ? rssiAt(dist, time, SEEDS[s.id], p) : null;
+      const snr = rssi === null ? -Infinity : rssi - noiseFloor;
       // SNR hysteresis band so shadowing noise near the threshold can't flap
       // the detection state (and spam the event log) every few frames
       const detectable = this.det[s.id] ? snr > SNR_DETECT_DB - 1.5 : snr > SNR_DETECT_DB + 1.5;
@@ -135,7 +152,7 @@ export class MockRfModel implements RfModel {
       if (detecting) {
         nDetecting++;
         // horizontal range: project slant range using an assumed altitude band
-        const slant = rangeFromRssi(rssi!);
+        const slant = distanceFromRssi(rssi!, p);
         const assumedAlt = clamp(dronePos.alt + noise(time * 0.6, SEEDS[s.id] + 9) * 15, 20, 200);
         const horiz = Math.sqrt(Math.max(100, slant * slant - assumedAlt * assumedAlt));
         rangings.push({ x: s.pos.x, y: s.pos.y, range: horiz, weight: confidence });
@@ -201,7 +218,13 @@ export class MockRfModel implements RfModel {
         }
       : { available: false, pos: { x: 0, y: 0, alt: 0 }, uncertainty: 0, confidence: 0, staleFor: 0 };
 
-    return { perScout, estimate, status };
+    return {
+      perScout,
+      estimate,
+      status,
+      noiseFloorDbm: noiseFloor,
+      detectionRangeM: detectionRangeM(SNR_DETECT_DB, p),
+    };
   }
 
   /** fused ground position from however many rangings are available */

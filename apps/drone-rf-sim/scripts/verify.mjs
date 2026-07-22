@@ -40,6 +40,8 @@ try {
 
   await page.goto(URL, { waitUntil: 'load' });
   await page.waitForFunction('window.__simReady === true', null, { timeout: 40000 });
+  // the checks below exercise controls hidden in the default simple mode
+  await page.evaluate(() => window.__simApi.ui.setState({ simpleMode: false }));
   await page.waitForTimeout(2500); // let imagery + first frames settle
 
   const api = (expr) => page.evaluate(expr);
@@ -417,6 +419,7 @@ try {
   });
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction('window.__simReady === true', null, { timeout: 40000 });
+  await page.evaluate(() => window.__simApi.ui.setState({ simpleMode: false }));
   await page.click('[data-testid="btn-load"]');
   await page.waitForTimeout(300);
   const postReloadWaypoint = await page.evaluate(() => {

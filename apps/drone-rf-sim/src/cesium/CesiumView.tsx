@@ -99,7 +99,7 @@ export function CesiumView(): JSX.Element {
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
         show: new Cesium.CallbackProperty(() => engine.drone.visible, false) as never,
       },
-      label: labelOf('DRONE-1', COLORS.drone),
+      label: labelOf('드론-1', COLORS.drone),
     });
     // altitude drop line + ground ring
     viewer.entities.add({
@@ -155,7 +155,11 @@ export function CesiumView(): JSX.Element {
           show: new Cesium.CallbackProperty(() => engine.getEntity(id).visible, false) as never,
         },
         label: {
-          ...labelOf(`SCOUT ${id}`, COLORS[id]),
+          ...labelOf(`스카우트 ${id}`, COLORS[id]),
+          text: new Cesium.CallbackProperty(() => {
+            const s = engine.scouts.find((q) => q.id === id)!;
+            return s.rssi !== null ? `스카우트 ${id} · ${s.rssi.toFixed(0)}dBm` : `스카우트 ${id}`;
+          }, false) as never,
           pixelOffset: new Cesium.Cartesian2(0, labelDy[id]),
         },
       });
@@ -199,9 +203,9 @@ export function CesiumView(): JSX.Element {
         show: new Cesium.CallbackProperty(() => engine.estimate.available, false) as never,
       },
       label: {
-        ...labelOf('EST', COLORS.estimate),
+        ...labelOf('추정', COLORS.estimate),
         text: new Cesium.CallbackProperty(
-          () => `EST ±${engine.estimate.uncertainty}m`,
+          () => `추정 ±${engine.estimate.uncertainty}m`,
           false,
         ) as never,
         show: new Cesium.CallbackProperty(

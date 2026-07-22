@@ -1,7 +1,7 @@
 import * as pc from 'playcanvas';
 import { mat, uniqueMat } from './materials';
 import { prim, torus } from './builders';
-import { mulberry32, paintSiteTexture, SITE_HALF } from '../../site/siteTexture';
+import { cityBuildings, mulberry32, paintSiteTexture, SITE_HALF } from '../../site/siteTexture';
 
 /** engine ENU (x east, y north) → PlayCanvas (x east, z = -north) */
 const Z = (northY: number): number => -northY;
@@ -137,6 +137,55 @@ export function buildEnvironment(app: pc.Application): void {
   building(55, -45, 46, 30, 11, '#8d99a4');
   building(-90, -60, 30, 22, 8, '#7f8a94');
 
+  // -------------------------------------------------------- city districts
+  // window grids are baked into tiled facade textures (one per style) so a
+  // whole city stays at ~2 draw calls per building instead of a box per window
+  const facadeTexture = (bodyHex: string, seed: number): pc.Texture => {
+    const c = document.createElement('canvas');
+    c.width = 96;
+    c.height = 96;
+    const cx = c.getContext('2d')!;
+    const r = mulberry32(seed);
+    cx.fillStyle = bodyHex;
+    cx.fillRect(0, 0, 96, 96);
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 4; col++) {
+        cx.fillStyle = r() > 0.3 ? '#c9dbe6' : '#5c6a75';
+        cx.fillRect(6 + col * 23, 8 + row * 18, 13, 9);
+      }
+    }
+    const t = new pc.Texture(app.graphicsDevice, {
+      width: 96,
+      height: 96,
+      format: pc.PIXELFORMAT_RGBA8,
+      mipmaps: true,
+    });
+    t.setSource(c);
+    t.anisotropy = 4;
+    return t;
+  };
+  const facades = ['#aab2b9', '#9aa3ac', '#b8bcc0', '#8f9aa5', '#c2bdb2'].map((hex, i) =>
+    facadeTexture(hex, 900 + i),
+  );
+  const cityRoof = mat('#565e66');
+  for (const b of cityBuildings()) {
+    const m = new pc.StandardMaterial();
+    m.diffuseMap = facades[b.style];
+    // tile so windows stay ~4 m wide and one floor ~3 m regardless of size
+    m.diffuseMapTiling = new pc.Vec2(Math.max(1, Math.round(b.w / 20)), Math.max(1, Math.round(b.h / 16)));
+    m.gloss = 0.25;
+    m.specular = new pc.Color(0.03, 0.03, 0.03);
+    m.update();
+    prim('box', { parent: root, material: m, pos: [b.x, b.h / 2, Z(b.y)], scale: [b.w, b.h, b.d] });
+    prim('box', {
+      parent: root,
+      material: cityRoof,
+      pos: [b.x, b.h + 0.5, Z(b.y)],
+      scale: [b.w + 1.5, 1, b.d + 1.5],
+      castShadows: false,
+    });
+  }
+
   // rooftop unit on the HQ
   prim('box', { parent: root, material: mat('#828c96'), pos: [-60, 19.6, Z(28)], scale: [10, 3, 7] });
 
@@ -197,13 +246,17 @@ export function buildEnvironment(app: pc.Application): void {
   const trunkMat = mat('#6d5236');
   const leafMats = [mat('#3f6e38'), mat('#4c7c40'), mat('#57894a'), mat('#47763d')];
   const pineMat = mat('#3a6634');
+  const city = cityBuildings();
+  const onBuildingPad = (x: number, y: number): boolean =>
+    city.some((b) => Math.abs(x - b.x) < b.w / 2 + 10 && Math.abs(y - b.y) < b.d / 2 + 10);
   let placed = 0;
   let guard = 0;
-  while (placed < 120 && guard++ < 1500) {
+  while (placed < 260 && guard++ < 4000) {
     const x = (rnd() * 2 - 1) * (SITE_HALF - 80);
     const y = (rnd() * 2 - 1) * (SITE_HALF - 80);
     if (Math.hypot(x, y) < 300) continue;
-    if (nearRoad(x, y, 55)) continue;
+    if (nearRoad(x, y, 45)) continue;
+    if (onBuildingPad(x, y)) continue;
     if (Math.hypot(x + 620, y + 560) < 200) continue; // water
     placed++;
     const g = new pc.Entity('tree');

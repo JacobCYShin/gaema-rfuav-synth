@@ -16,6 +16,7 @@ export function defaultScenario(): ScenarioDoc {
     drone: {
       home: { x: -600, y: -520, alt: 0 },
       waypoints: [],
+      freqHz: 2.45e9,
     },
     scouts: [
       {
@@ -95,6 +96,7 @@ function isRoute(value: unknown): boolean {
 export function parseScenarioDoc(value: unknown): ScenarioDoc | null {
   if (!isRecord(value) || value.version !== 1 || typeof value.name !== 'string') return null;
   if (!isRecord(value.drone) || !isWorldPos(value.drone.home) || !isRoute(value.drone.waypoints)) return null;
+  if (value.drone.freqHz !== undefined && !(isFiniteNumber(value.drone.freqHz) && value.drone.freqHz > 0)) return null;
   if (!Array.isArray(value.scouts) || value.scouts.length !== 3) return null;
 
   const scoutIds = new Set<string>();
