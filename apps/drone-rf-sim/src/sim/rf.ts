@@ -106,6 +106,7 @@ export class MockRfModel implements RfModel {
   private est: WorldPos | null = null;
   private uncertainty = 400;
   private staleFor = 0;
+  private lastStatus: FusionStatus = 'SEARCHING';
   private readonly params: LinkBudgetParams;
 
   constructor(params: Partial<LinkBudgetParams> = {}) {
@@ -118,6 +119,7 @@ export class MockRfModel implements RfModel {
     this.est = null;
     this.uncertainty = 400;
     this.staleFor = 0;
+    this.lastStatus = 'SEARCHING';
   }
 
   update(input: RfInput): RfOutput {
@@ -201,12 +203,18 @@ export class MockRfModel implements RfModel {
       if (this.staleFor > 8) this.est = null;
     }
 
+    // status with hysteresis bands: enter TRACKING above 0.60, only drop out
+    // below 0.48 (same for LOW CONFIDENCE) so confidence noise near a
+    // threshold can't flap the fusion state and spam the event log
     let status: FusionStatus;
+    const wasTracking = this.lastStatus === 'TRACKING';
+    const wasLow = this.lastStatus === 'LOW CONFIDENCE';
     if (!this.est) status = 'SEARCHING';
     else if (this.staleFor > 1.2) status = 'LOST';
-    else if (nDetecting >= 2 && combined >= 0.55) status = 'TRACKING';
-    else if (combined < 0.32) status = 'LOW CONFIDENCE';
+    else if (nDetecting >= 2 && combined >= (wasTracking ? 0.48 : 0.6)) status = 'TRACKING';
+    else if (combined < (wasLow ? 0.38 : 0.3)) status = 'LOW CONFIDENCE';
     else status = 'DETECTED';
+    this.lastStatus = status;
 
     const estimate: Estimate = this.est
       ? {

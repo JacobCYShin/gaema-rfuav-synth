@@ -67,12 +67,15 @@ scripts/record.mjs  프레임 단위 결정적 캡처로 데모 mp4 녹화
 Mock RF는 `RfModel` 인터페이스 뒤에 격리. 이동 계산은 엔진에서만 수행하므로
 PlayCanvas 현장뷰와 Cesium 지도뷰가 같은 엔진을 그대로 구독합니다.
 
-## Mock RF 모델 v2
+## RF 모델 — 물리 전파 + 융합 휴리스틱
 
-로그-거리 경로손실 → SNR 탐지(임계 14dB, 유효 반경 ≈770m) → RSSI 역산 거리 →
-**가중 다변측량**으로 추정 위치를 계산하고, 거리 잔차 + 기하 패널티로
-불확실성 반경을 산출합니다. 실제 물리 모델은 아니지만 실제 파이프라인과
-동일한 구조라서 교체 시 시각화 변화가 없습니다.
+Scout별 RSSI/SNR은 **링크버짓 기반 물리 모델**([src/sim/propagation.ts](src/sim/propagation.ts))
+에서 계산됩니다: Friis 자유공간손실 + 로그거리 경로손실 + 열잡음 바닥(kTB).
+탐지 반경은 하드코딩이 아니라 물리에서 창발합니다(2.45GHz ≈ 1.33km, 5.8GHz ≈ 0.61km —
+우측 패널에서 대역 선택). 그 위의 융합 계층은 휴리스틱입니다: SNR 히스테리시스
+탐지 → RSSI 역산 거리 → **가중 다변측량** → 잔차+기하 패널티 기반 불확실성.
+수식 근거·상수 출처는 [docs/propagation-model.md](docs/propagation-model.md),
+검증은 `npm run verify:propagation` / `npm run verify:rf`.
 
 ## Python RF 서버 연결(향후)
 
