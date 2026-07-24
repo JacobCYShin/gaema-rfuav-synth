@@ -99,6 +99,59 @@ try {
   }
   const wpCount = await api(`window.__simApi.engine.drone.waypoints.length`);
   check('3 waypoints added via double-click', wpCount === 3, `count=${wpCount}`);
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="spectrum-panel"]')?.dataset.spectrumSource === 'live',
+  );
+  const liveAfterEdit = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="spectrum-panel"]');
+    return {
+      source: panel?.dataset.spectrumSource,
+      mode: panel?.dataset.spectrumMode,
+      idleMs: Number(panel?.dataset.idleReturnMs),
+      crossfadeMs: Number(panel?.dataset.crossfadeMs),
+    };
+  });
+  check(
+    'route edit switches spectrum to live with crossfade',
+    liveAfterEdit.source === 'live' &&
+      liveAfterEdit.mode === 'auto' &&
+      liveAfterEdit.idleMs > liveAfterEdit.crossfadeMs &&
+      liveAfterEdit.crossfadeMs > 0,
+    JSON.stringify(liveAfterEdit),
+  );
+
+  await page.waitForTimeout(liveAfterEdit.idleMs + 400);
+  const idleSource = await page.getAttribute('[data-testid="spectrum-panel"]', 'data-spectrum-source');
+  check('idle spectrum returns to verified hero replay', idleSource === 'hero', `source=${idleSource}`);
+
+  await page.click('[data-testid="spectrum-live"]');
+  await page.waitForTimeout(250);
+  const manualLive = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="spectrum-panel"]');
+    return { source: panel?.dataset.spectrumSource, mode: panel?.dataset.spectrumMode };
+  });
+  await page.click('[data-testid="spectrum-hero"]');
+  await page.waitForTimeout(250);
+  const manualHero = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="spectrum-panel"]');
+    return { source: panel?.dataset.spectrumSource, mode: panel?.dataset.spectrumMode };
+  });
+  await page.click('[data-testid="spectrum-auto"]');
+  await page.waitForTimeout(250);
+  const autoHero = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="spectrum-panel"]');
+    return { source: panel?.dataset.spectrumSource, mode: panel?.dataset.spectrumMode };
+  });
+  check(
+    'manual spectrum source controls work',
+    manualLive.source === 'live' &&
+      manualLive.mode === 'live' &&
+      manualHero.source === 'hero' &&
+      manualHero.mode === 'hero' &&
+      autoHero.source === 'hero' &&
+      autoHero.mode === 'auto',
+    JSON.stringify({ manualLive, manualHero, autoHero }),
+  );
   await shot('02_waypoint_edit.png');
 
   // ---- 4. drag waypoint 2 with the mouse
@@ -186,6 +239,23 @@ try {
   })()`);
   const anyRssi = [rf.rssiA, rf.rssiB, rf.rssiC].some((v) => v !== null);
   check('mock RSSI produced', anyRssi, JSON.stringify(rf));
+  await page.waitForTimeout(300);
+  const spectrumRf = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="spectrum-panel"]');
+    return {
+      source: panel?.dataset.spectrumSource,
+      strongestRssi: panel?.dataset.strongestRssi,
+      rssiGainDb: Number(panel?.dataset.rssiGainDb),
+    };
+  });
+  check(
+    'interactive live spectrum consumes current scout RSSI',
+    spectrumRf.source === 'live' &&
+      spectrumRf.strongestRssi !== 'none' &&
+      Number.isFinite(Number(spectrumRf.strongestRssi)) &&
+      spectrumRf.rssiGainDb > 0,
+    JSON.stringify(spectrumRf),
+  );
   check('estimate + uncertainty available', rf.est && rf.unc > 0, `±${rf.unc} m, status=${rf.status}`);
   await shot('05_detection_estimate.png');
 
@@ -276,6 +346,16 @@ try {
   check('replay enters and seeks recorded state',
     replayState.mode === 'replay' && Math.abs(replayState.replayTime - replaySeekTime) < 0.1 && replayMoved > 0.1,
     `recorded=${recDur.toFixed(1)}s seek=${replayState.replayTime.toFixed(1)}s delta=${replayMoved.toFixed(1)}m`);
+  await page.waitForTimeout(300);
+  const replaySpectrumSource = await page.getAttribute(
+    '[data-testid="spectrum-panel"]',
+    'data-spectrum-source',
+  );
+  check(
+    'scripted replay restores verified hero spectrum',
+    replaySpectrumSource === 'hero',
+    `source=${replaySpectrumSource}`,
+  );
   await page.click('[data-testid="btn-edit"]');
   await page.waitForTimeout(200);
   const liveAfterReplay = await page.evaluate(() => {

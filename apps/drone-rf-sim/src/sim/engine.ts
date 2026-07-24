@@ -14,6 +14,7 @@ import type {
   Waypoint,
   WorldPos,
 } from './types';
+import { markSpectrumInteraction } from '../spectrum/sourceControl';
 
 let wpCounter = 1;
 
@@ -179,6 +180,7 @@ export class SimulationEngine {
   }
 
   reset(): void {
+    markSpectrumInteraction();
     this.applyScenario(this.baseline);
   }
 
@@ -186,6 +188,7 @@ export class SimulationEngine {
   setMode(mode: SimMode): void {
     if (mode === this.mode) return;
     if (mode === 'replay' && this.recording.length === 0) return;
+    if (mode === 'run') markSpectrumInteraction();
 
     if (this.mode === 'replay') {
       this.restoreLiveSimulation();
@@ -265,12 +268,14 @@ export class SimulationEngine {
   }
 
   setSpeedMult(m: number): void {
+    markSpectrumInteraction();
     this.speedMult = m;
     this.emitChange();
   }
 
   stepOnce(): void {
     if (this.mode === 'edit' || this.mode === 'pause') {
+      markSpectrumInteraction();
       const prev = this.mode;
       this.mode = 'run';
       this.advance(0.1);
@@ -297,6 +302,7 @@ export class SimulationEngine {
   }
 
   addWaypoint(id: EntityId, x: number, y: number, alt?: number, speed?: number): Waypoint {
+    markSpectrumInteraction();
     const ent = this.getEntity(id);
     const isDrone = id === 'drone-1';
     const last = ent.waypoints[ent.waypoints.length - 1];
@@ -321,6 +327,7 @@ export class SimulationEngine {
   moveWaypoint(id: EntityId, wpId: string, x: number, y: number): void {
     const wp = this.getEntity(id).waypoints.find((w) => w.id === wpId);
     if (!wp) return;
+    markSpectrumInteraction();
     wp.x = x;
     wp.y = y;
     this.emitChange();
@@ -329,6 +336,7 @@ export class SimulationEngine {
   updateWaypoint(id: EntityId, wpId: string, patch: { alt?: number; speed?: number }): void {
     const wp = this.getEntity(id).waypoints.find((w) => w.id === wpId);
     if (!wp) return;
+    markSpectrumInteraction();
     if (patch.alt !== undefined) wp.alt = Math.max(0, patch.alt);
     if (patch.speed !== undefined) wp.speed = Math.max(0.2, patch.speed);
     this.emitChange();
@@ -338,6 +346,7 @@ export class SimulationEngine {
     const ent = this.getEntity(id);
     const idx = ent.waypoints.findIndex((w) => w.id === wpId);
     if (idx < 0) return;
+    markSpectrumInteraction();
     const wasNext = ent.nextWpId === wpId;
     ent.waypoints.splice(idx, 1);
     if (wasNext) ent.nextWpId = ent.waypoints[idx]?.id ?? ent.waypoints[0]?.id ?? null;
@@ -350,12 +359,14 @@ export class SimulationEngine {
     const idx = ent.waypoints.findIndex((w) => w.id === wpId);
     const j = idx + dir;
     if (idx < 0 || j < 0 || j >= ent.waypoints.length) return;
+    markSpectrumInteraction();
     const [wp] = ent.waypoints.splice(idx, 1);
     ent.waypoints.splice(j, 0, wp);
     this.emitStructure();
   }
 
   moveEntity(id: EntityId, x: number, y: number): void {
+    markSpectrumInteraction();
     const ent = this.getEntity(id);
     ent.pos.x = x;
     ent.pos.y = y;
@@ -368,6 +379,7 @@ export class SimulationEngine {
   setFlightMode(mode: FlightMode): void {
     const d = this.drone;
     if (mode === d.flightMode) return;
+    markSpectrumInteraction();
     d.flightMode = mode;
     if (mode === 'LOITER') {
       d.loiterCenter = { ...d.pos };
@@ -391,12 +403,14 @@ export class SimulationEngine {
   }
 
   setOverrides(patch: { speed?: number | null; alt?: number | null }): void {
+    markSpectrumInteraction();
     if (patch.speed !== undefined) this.drone.speedOverride = patch.speed;
     if (patch.alt !== undefined) this.drone.altOverride = patch.alt;
     this.emitChange();
   }
 
   toggleReceiver(id: ScoutId): void {
+    markSpectrumInteraction();
     const s = this.scouts.find((q) => q.id === id)!;
     s.receiverOn = !s.receiverOn;
     this.log(`${s.name}: receiver ${s.receiverOn ? 'ON' : 'OFF'}`, s.receiverOn ? 'info' : 'warn');
@@ -409,6 +423,7 @@ export class SimulationEngine {
   }
 
   clearWaypoints(id: EntityId): void {
+    markSpectrumInteraction();
     const ent = this.getEntity(id);
     ent.waypoints = [];
     ent.nextWpId = null;
