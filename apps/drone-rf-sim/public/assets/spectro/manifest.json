@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "drone": "DJI_MINI3",
+  "profile": "profile_DJI_MINI3.json",
+  "fs_hz": 100000000.0,
+  "center_freq_hz": 2470000000.0,
+  "freq_min_hz": 2420000000.0,
+  "freq_max_hz": 2519609375.0,
+  "n_time": 247,
+  "n_freq": 256,
+  "row_dt_s": 0.00040485829959514174,
+  "duration_s": 0.1,
+  "db_min": -28.39647808074951,
+  "db_max": -0.08887321703131806,
+  "display_db_min": -10.0,
+  "display_db_max": 50.0,
+  "colormap": "hot",
+  "data": "spectrogram.u8.bin",
+  "labels": "labels.json",
+  "loop": true,
+  "seed": 20260707
+}

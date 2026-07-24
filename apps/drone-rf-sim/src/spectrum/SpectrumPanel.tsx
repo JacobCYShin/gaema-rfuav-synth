@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { engine } from '../state/store';
+import { heroSpectrum, loadHeroReplay } from './heroReplay';
+import type { HeroReplay } from './heroReplay';
 import { DISPLAY_FREQ_BINS, liveSpectrum } from './liveSpectrum';
 import type { SignalProfile } from './types';
 
@@ -20,7 +22,9 @@ export function SpectrumPanel(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [profile, setProfile] = useState<SignalProfile | null>(null);
+  const [heroReplay, setHeroReplay] = useState<HeroReplay | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [heroError, setHeroError] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -37,6 +41,21 @@ export function SpectrumPanel(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    if (!profile) return;
+    let cancelled = false;
+    void loadHeroReplay(profile)
+      .then((replay) => {
+        if (!cancelled) setHeroReplay(replay);
+      })
+      .catch(() => {
+        if (!cancelled) setHeroError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     const panel = panelRef.current;
     if (!canvas || !panel || !profile) return;
@@ -51,14 +70,20 @@ export function SpectrumPanel(): JSX.Element {
     let animationFrame = 0;
 
     const draw = (nowMs: number): void => {
-      const displayTime =
+      const usingHero = heroReplay !== null;
+      const liveTime =
         engine.mode === 'run' || engine.mode === 'replay' ? engine.simTime : nowMs / 1000;
-      const result = liveSpectrum(
-        profile,
-        engine.scouts.map((scout) => scout.rssi),
-        displayTime,
-        row,
-      );
+      const heroResult = heroReplay
+        ? heroSpectrum(heroReplay, profile, nowMs / 1000, row)
+        : null;
+      const liveResult = heroResult
+        ? null
+        : liveSpectrum(
+            profile,
+            engine.scouts.map((scout) => scout.rssi),
+            liveTime,
+            row,
+          );
 
       waterfall.data.copyWithin(rowBytes, 0, waterfall.data.length - rowBytes);
       for (let bin = 0; bin < DISPLAY_FREQ_BINS; bin += 1) {
@@ -86,15 +111,30 @@ export function SpectrumPanel(): JSX.Element {
       context.stroke();
       context.putImageData(waterfall, 0, TRACE_HEIGHT);
 
+      if (heroResult?.activeLabels.length) {
+        context.strokeStyle = 'rgba(114, 230, 255, 0.92)';
+        context.lineWidth = 1;
+        for (const label of heroResult.activeLabels) {
+          const x = (1 - label.cy - label.h / 2) * DISPLAY_FREQ_BINS;
+          context.strokeRect(x, TRACE_HEIGHT + 0.5, label.h * DISPLAY_FREQ_BINS, 8);
+        }
+      }
+
       if (frame % 12 === 0) {
         panel.dataset.profileLoaded = 'true';
-        panel.dataset.spectrumSource = 'live';
-        panel.dataset.hopIndex = String(result.hopIndex);
-        panel.dataset.fhssActive = String(result.fhssActive);
-        panel.dataset.videoActive = String(result.videoActive);
-        panel.dataset.strongestRssi =
-          result.strongestRssi === null ? 'none' : result.strongestRssi.toFixed(1);
-        panel.dataset.rssiGainDb = result.rssiGainDb.toFixed(2);
+        panel.dataset.heroLoaded = String(heroReplay !== null);
+        panel.dataset.spectrumSource = usingHero ? 'hero' : 'live';
+        if (heroResult) {
+          panel.dataset.heroRow = String(heroResult.rowIndex);
+          panel.dataset.activeLabels = String(heroResult.activeLabels.length);
+        } else if (liveResult) {
+          panel.dataset.hopIndex = String(liveResult.hopIndex);
+          panel.dataset.fhssActive = String(liveResult.fhssActive);
+          panel.dataset.videoActive = String(liveResult.videoActive);
+          panel.dataset.strongestRssi =
+            liveResult.strongestRssi === null ? 'none' : liveResult.strongestRssi.toFixed(1);
+          panel.dataset.rssiGainDb = liveResult.rssiGainDb.toFixed(2);
+        }
         panel.dataset.rowMin = Math.min(...row).toFixed(2);
         panel.dataset.rowMax = Math.max(...row).toFixed(2);
       }
@@ -103,14 +143,23 @@ export function SpectrumPanel(): JSX.Element {
     };
     animationFrame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animationFrame);
-  }, [profile]);
+  }, [heroReplay, profile]);
+
+  const sourceLabel = loadError
+    ? 'PROFILE ERROR'
+    : heroReplay
+      ? 'VERIFIED REPLAY'
+      : heroError
+        ? 'LIVE FALLBACK'
+        : 'CAPTURE LOADING';
 
   return (
     <div
       className="panel spectrum-panel"
       data-testid="spectrum-panel"
       data-profile-loaded={profile ? 'true' : 'false'}
-      data-spectrum-source="live"
+      data-hero-loaded={heroReplay ? 'true' : 'false'}
+      data-spectrum-source={heroReplay ? 'hero' : 'live'}
       ref={panelRef}
     >
       <div className="spectrum-head">
@@ -119,14 +168,14 @@ export function SpectrumPanel(): JSX.Element {
           <span>{profile?.drone ?? 'PROFILE LOADING'}</span>
         </div>
         <span className={`spectrum-source ${loadError ? 'error' : ''}`}>
-          {loadError ? 'PROFILE ERROR' : 'LIVE APPROX'}
+          {sourceLabel}
         </span>
       </div>
       <canvas
         ref={canvasRef}
         width={DISPLAY_FREQ_BINS}
         height={CANVAS_HEIGHT}
-        aria-label="Live RF spectrum and waterfall"
+        aria-label="RF spectrum and waterfall"
       />
       <div className="spectrum-axis">
         <span>{profile ? `${((profile.center_freq_hz - profile.span_hz / 2) / 1e9).toFixed(3)} GHz` : '--'}</span>
