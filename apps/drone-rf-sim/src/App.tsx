@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BottomBar, EventLog, LeftPanel, Legend, RightPanel, TopBar } from './ui/panels';
 import { engine, useUi } from './state/store';
+import { SpectrumPanel } from './spectrum/SpectrumPanel';
 
 // renderer is chosen at load time and code-split so only one engine ships:
 //   default            → PlayCanvas stylized 3D field view
@@ -49,6 +50,7 @@ export function App(): JSX.Element {
       <RightPanel />
       <BottomBar />
       <EventLog />
+      <SpectrumPanel />
       <Legend />
     </div>
   );

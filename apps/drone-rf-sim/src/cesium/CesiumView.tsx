@@ -160,20 +160,21 @@ export function CesiumView(): JSX.Element {
         },
       });
       // detection ring pulse around a detecting scout
+      const pulseRadius = new Cesium.CallbackProperty(
+        (time?: Cesium.JulianDate) =>
+          26 +
+          Math.sin(Cesium.JulianDate.toDate(time ?? viewer.clock.currentTime).getTime() / 260) *
+            6,
+        false,
+      );
       viewer.entities.add({
         position: new Cesium.CallbackProperty(() => {
           const p = engine.getEntity(id).pos;
           return cartXY(p.x, p.y, 0.5);
         }, false) as never,
         ellipse: {
-          semiMajorAxis: new Cesium.CallbackProperty(
-            () => 26 + Math.sin(performance.now() / 260) * 6,
-            false,
-          ) as never,
-          semiMinorAxis: new Cesium.CallbackProperty(
-            () => 26 + Math.sin(performance.now() / 260) * 6,
-            false,
-          ) as never,
+          semiMajorAxis: pulseRadius as never,
+          semiMinorAxis: pulseRadius as never,
           height: 0.5,
           material: Cesium.Color.TRANSPARENT,
           outline: true,

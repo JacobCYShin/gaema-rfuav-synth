@@ -40,10 +40,39 @@ try {
 
   await page.goto(URL, { waitUntil: 'load' });
   await page.waitForFunction('window.__simReady === true', null, { timeout: 40000 });
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="spectrum-panel"]')?.dataset.profileLoaded === 'true',
+    null,
+    { timeout: 10000 },
+  );
   await page.waitForTimeout(2500); // let imagery + first frames settle
 
   const api = (expr) => page.evaluate(expr);
   const shot = (file) => page.screenshot({ path: path.join(outDir, file) });
+
+  await page.waitForFunction(
+    () => Number(document.querySelector('[data-testid="spectrum-panel"]')?.dataset.rowMax) > 0,
+    null,
+    { timeout: 5000 },
+  );
+  const spectrumBefore = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="spectrum-panel"]');
+    return {
+      source: panel?.dataset.spectrumSource,
+      hop: panel?.dataset.hopIndex,
+      rowMin: Number(panel?.dataset.rowMin),
+      rowMax: Number(panel?.dataset.rowMax),
+    };
+  });
+  check(
+    'validated live spectrum profile is rendering',
+    spectrumBefore.source === 'live' &&
+      Number.isFinite(spectrumBefore.rowMin) &&
+      Number.isFinite(spectrumBefore.rowMax) &&
+      Number.isFinite(Number(spectrumBefore.hop)) &&
+      spectrumBefore.rowMax > 0,
+    JSON.stringify(spectrumBefore),
+  );
 
   // ---- EDIT mode screenshot
   await shot('01_edit_mode.png');
@@ -155,6 +184,22 @@ try {
   })()`);
   const anyRssi = [rf.rssiA, rf.rssiB, rf.rssiC].some((v) => v !== null);
   check('mock RSSI produced', anyRssi, JSON.stringify(rf));
+  await page.waitForTimeout(300);
+  const spectrumRf = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="spectrum-panel"]');
+    return {
+      strongestRssi: panel?.dataset.strongestRssi,
+      rssiGainDb: Number(panel?.dataset.rssiGainDb),
+      rowMax: Number(panel?.dataset.rowMax),
+    };
+  });
+  check(
+    'live spectrum consumes current scout RSSI',
+    spectrumRf.strongestRssi !== 'none' &&
+      Number.isFinite(Number(spectrumRf.strongestRssi)) &&
+      spectrumRf.rssiGainDb > 0,
+    JSON.stringify(spectrumRf),
+  );
   check('estimate + uncertainty available', rf.est && rf.unc > 0, `±${rf.unc} m, status=${rf.status}`);
   await shot('05_detection_estimate.png');
 

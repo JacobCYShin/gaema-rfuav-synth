@@ -169,6 +169,72 @@ body,
   pointer-events: none;
 }
 
+.spectrum-panel {
+  left: 312px;
+  bottom: 58px;
+  width: min(420px, calc(100vw - 612px));
+  min-width: 300px;
+  padding: 8px 10px 7px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.spectrum-panel button {
+  pointer-events: auto;
+}
+
+.spectrum-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.spectrum-head strong {
+  display: block;
+  color: #e8f2fb;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+}
+
+.spectrum-head div > span {
+  display: block;
+  margin-top: 1px;
+  color: #607f98;
+  font: 8px 'Consolas', monospace;
+}
+
+.spectrum-source {
+  color: #57d98a;
+  border: 1px solid rgba(87, 217, 138, 0.45);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font: 8px 'Consolas', monospace;
+  letter-spacing: 0.8px;
+}
+
+.spectrum-source.error {
+  color: #ff8f8f;
+  border-color: rgba(255, 95, 95, 0.45);
+}
+
+.spectrum-panel canvas {
+  display: block;
+  width: 100%;
+  height: 160px;
+  background: #071019;
+  border: 1px solid rgba(96, 145, 185, 0.3);
+  image-rendering: auto;
+}
+
+.spectrum-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: #607f98;
+  font: 8px 'Consolas', monospace;
+}
+
 .lg {
   display: flex;
   align-items: center;
@@ -650,7 +716,8 @@ body,
   }
 
   .event-log,
-  .legend {
+  .legend,
+  .spectrum-panel {
     display: none;
   }
 

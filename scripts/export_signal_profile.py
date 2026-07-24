@@ -24,6 +24,7 @@ from gaema_rfuav_synth.dataset.exporter import (
     _gen_video,
     _profile,
 )
+from gaema_rfuav_synth.transform.colormap import resolve_colormap
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -56,6 +57,11 @@ def build_signal_profile(drone: str, seed: int | None = None) -> dict:
 
     db_min, db_max = map(float, validation["analysis"]["hist_range_db"])
     stft = load_stft_preset()
+    colormap = resolve_colormap(stft.colormap)
+    colormap_lut = [
+        "".join(f"{round(channel * 255):02x}" for channel in colormap(i / 255.0)[:3])
+        for i in range(256)
+    ]
     return {
         "version": 1,
         "drone": drone,
@@ -90,6 +96,7 @@ def build_signal_profile(drone: str, seed: int | None = None) -> dict:
         "db_min": db_min,
         "db_max": db_max,
         "colormap": stft.colormap,
+        "colormap_lut": colormap_lut,
     }
 
 

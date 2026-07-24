@@ -53,3 +53,5 @@ def test_web_signal_profile_is_a_validated_parameter_projection():
         "hist_range_db"
     ]
     assert profile["colormap"] == load_stft_preset().colormap
+    assert len(profile["colormap_lut"]) == 256
+    assert all(len(color) == 6 for color in profile["colormap_lut"])
